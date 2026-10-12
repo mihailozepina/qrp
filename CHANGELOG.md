@@ -6,6 +6,10 @@ find out by reading a diff. Newest first.
 
 ## Unreleased
 
+_(nothing yet)_
+
+## 0.12.0
+
 - **New module: `context`** (`@nemanjan00/qrp/context`). `createContext(fallback)`
   returns `{ provide, read, watch, find }`: a subtree provides a value, descendants
   read the nearest one by walking DOM ancestors — the missing piece for compound
