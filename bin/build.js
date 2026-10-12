@@ -22,7 +22,7 @@ import process from "node:process";
 const INDEX_MODULES = [
 	"qrp", "html", "forms", "table", "collection", "datagrid", "http",
 	"events", "toasts", "browser", "proto",
-	"format", "resource", "export", "spark", "scale", "timeseries"
+	"format", "resource", "export", "spark", "scale", "timeseries", "context"
 ];
 
 // Directories whose EVERY *.js file (a .d.ts sibling excluded) is a public deep

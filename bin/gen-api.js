@@ -32,6 +32,7 @@ const MODULES = [
 	{ title: "events", imp: "@nemanjan00/qrp/events", files: ["events/index.d.ts"] },
 	{ title: "toasts", imp: "@nemanjan00/qrp/toasts", files: ["toasts/index.d.ts"] },
 	{ title: "browser", imp: "@nemanjan00/qrp/browser", files: ["browser/index.d.ts"] },
+	{ title: "context", imp: "@nemanjan00/qrp/context", files: ["context/index.d.ts"] },
 	{ title: "behaviors", imp: "@nemanjan00/qrp/behaviors/<name>", files: [
 		"behaviors/portal.d.ts", "behaviors/dismissable.d.ts", "behaviors/trap-focus.d.ts",
 		"behaviors/anchored.d.ts", "behaviors/disclosure.d.ts", "behaviors/busy-while.d.ts"] },

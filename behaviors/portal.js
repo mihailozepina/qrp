@@ -5,6 +5,7 @@
  */
 
 import { onDispose } from "../qrp/index.js";
+import { setOwner } from "../context/index.js";
 
 /**
  * Move `node` into `target` and return a dispose() that removes it again.
@@ -14,9 +15,20 @@ import { onDispose } from "../qrp/index.js";
  *
  * @param {Node} node element to relocate
  * @param {Node} [target] destination (default document.body)
+ * @param {object} [options]
+ * @param {Node} [options.owner] node contexts resolve through (default: the
+ *   node's parent before the move) — see the context module
  * @returns {Function} dispose
  */
-export const portal = (node, target = document.body) => {
+export const portal = (node, target = document.body, options = {}) => {
+	// Contexts keep resolving where the node came from (or the given owner),
+	// not from <body>: a portaled menu still reads its component's context.
+	const owner = options.owner || (node.parentNode !== target ? node.parentNode : null);
+
+	if(owner) {
+		setOwner(node, owner);
+	}
+
 	target.appendChild(node);
 
 	let done = false;

@@ -76,6 +76,10 @@
 			"types": "./timeseries/index.d.ts",
 			"default": "./dist/timeseries.js"
 		},
+		"./context": {
+			"types": "./context/index.d.ts",
+			"default": "./dist/context.js"
+		},
 		"./behaviors": {
 			"types": "./behaviors/index.d.ts",
 			"default": "./dist/behaviors.js"
@@ -120,7 +124,7 @@
 	"scripts": {
 		"test": "node --test 'test/*.test.js'",
 		"build": "node bin/build.js",
-		"lint": "eslint qrp forms browser events toasts proto http utils behaviors collection table html test",
+		"lint": "eslint qrp forms browser events toasts proto http utils behaviors collection table html context test",
 		"prepack": "node bin/build.js",
 		"prepare": "husky",
 		"typecheck": "tsc --noEmit",

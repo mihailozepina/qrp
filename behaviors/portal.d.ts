@@ -14,8 +14,16 @@
  * effects AND behaviors — you don't have to collect the undos by hand. The undos
  * stay returned and are idempotent, so calling one manually is still fine.
  */
+export interface PortalOptions {
+	/**
+	 * The node contexts should resolve through (see `context`). Defaults to the
+	 * node's parent before the move; pass the trigger for detached content.
+	 */
+	owner?: Node;
+}
 /**
  * Move `node` into `target` (default document.body); returns an idempotent
- * dispose(). Also auto-registers teardown with the current scope.
+ * dispose(). Also auto-registers teardown with the current scope. Contexts keep
+ * resolving through where the node came from (or `options.owner`).
  */
-export function portal(node: Node, target?: Node): () => void;
+export function portal(node: Node, target?: Node, options?: PortalOptions): () => void;
