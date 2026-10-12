@@ -114,7 +114,10 @@ export const createToasts = (options = {}) => {
 	const dismiss = (id) => {
 		const toast = find(id);
 
-		if(!toast || toast.removed) {
+		// Ignore a repeat dismiss only while OUR exit timer runs. An item flagged
+		// `removed` by someone else (a renderer running its own exit animation,
+		// as 0.11 code did) must still be deleted when it calls dismiss().
+		if(!toast || exits.has(id)) {
 			return;
 		}
 

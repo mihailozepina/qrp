@@ -8,6 +8,15 @@ find out by reading a diff. Newest first.
 
 _(nothing yet)_
 
+## 0.12.1
+
+- **Fix (regression in 0.12.0): `toasts.dismiss()` ignored items flagged
+  `removed` by someone else.** 0.12.0 skipped any toast already marked
+  `removed`, meant to make a repeat dismiss during qrp's own exit phase a no-op —
+  but a renderer running its own exit animation (setting `removed`, then calling
+  `dismiss()` to delete, as 0.11 code did) never got its toast deleted. Only a
+  toast inside qrp's own `exitMs` window is skipped now.
+
 ## 0.12.0
 
 - **New module: `context`** (`@nemanjan00/qrp/context`). `createContext(fallback)`

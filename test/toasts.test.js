@@ -223,3 +223,25 @@ test("any variant: the 'toast' bus event and extra `variants` names", () => {
 	assert.equal(ctl.store.items[0].description, "there");
 	assert.equal(ctl.store.items[1].id, "save");
 });
+
+test("dismiss deletes an item a renderer flagged removed itself (0.11 behavior)", () => {
+	const t = createToasts({ timeout: 0 });
+	const id = t.push("info", "hi");
+
+	// A renderer running its own exit animation flags the item, then dismisses.
+	t.store.items.find((item) => item.id === id).removed = true;
+	t.dismiss(id);
+	assert.equal(t.store.items.length, 0);
+});
+
+test("a repeat dismiss during qrp's own exit phase is ignored, then the item leaves", async () => {
+	const t = createToasts({ timeout: 0, exitMs: 10 });
+	const id = t.push("info", "hi");
+
+	t.dismiss(id);
+	t.dismiss(id);
+	assert.equal(t.store.items.length, 1);
+	assert.equal(t.store.items[0].removed, true);
+	await new Promise((resolve) => setTimeout(resolve, 25));
+	assert.equal(t.store.items.length, 0);
+});
