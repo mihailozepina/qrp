@@ -194,6 +194,29 @@ reports agree on where the line sits: around **three levels of static nesting**,
 `el()` trees stop being scannable. "One idiom for consistency" is the wrong
 trade — mixing is the intended style, not a compromise.
 
+## Context
+
+**`provide()` re-runs its readers synchronously — don't call it from inside one
+of them under `untracked()`.** Children are built before their parent, so
+`provide()` must re-run readers right away (that's how a trigger built earlier
+in the same construction finds its root). But an effect that *reads* a context
+and then, under `untracked()`, *provides* that context (or builds something that
+does) is no longer "the running effect" to qrp, so the re-run re-enters it:
+
+```js
+// ✗ reads Ctx, then (untracked) builds a subtree that provides Ctx → re-entry
+effect(() => {
+	if(Ctx.read(node).open) {
+		untracked(() => buildPanel());   // buildPanel() calls Ctx.provide(...)
+	}
+});
+```
+
+Set a guard before building (`if(building) return; building = true; …`), or
+look the value up with `Ctx.find(node)` (untracked) when the effect doesn't need
+to re-run on context changes. `setOwner()` / `portal()` don't have this problem:
+owner changes re-run readers on a microtask.
+
 ## Behaviors
 
 **UI built inside an event handler has no owner scope.** A modal opened from
