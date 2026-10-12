@@ -115,3 +115,111 @@ test("auto-dismiss after timeout", async () => {
 
 	assert.equal(root.querySelectorAll(".qrp-toast").length, 0);
 });
+
+// --- ids, update, per-toast duration, pause/resume, exit phase -------------
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("push returns the id; meta.id updates the live toast instead of adding", () => {
+	const { ctl, root } = setup();
+
+	const id = ctl.push("loading", "Saving…", { id: "save" });
+
+	assert.equal(id, "save");
+	assert.equal(ctl.push("success", "Saved", { id: "save" }), "save");
+	assert.equal(ctl.store.items.length, 1);
+	assert.equal(root.querySelector(".qrp-toast-success .qrp-toast-body").textContent, "Saved");
+	assert.equal(typeof ctl.info("x"), "number");
+});
+
+test("extra meta fields stay on the item; update merges reactively", () => {
+	const { ctl, root } = setup();
+	const id = ctl.push("info", "Event created", { description: "Sunday 9am", action: { label: "Undo" } });
+	const item = ctl.store.items[0];
+
+	assert.equal(item.description, "Sunday 9am");
+	assert.equal(item.action.label, "Undo");
+	assert.equal(ctl.update(id, { content: "Event moved", variant: "warning" }), true);
+	assert.equal(root.querySelector(".qrp-toast-body").textContent, "Event moved");
+	assert.ok(root.querySelector(".qrp-toast-warning"), "variant change re-renders the class");
+	assert.equal(root.querySelector(".qrp-toast-title").textContent, "Warning", "a default title follows the variant");
+	assert.equal(ctl.update(999, { content: "nope" }), false);
+});
+
+test("duplicate string messages return the original toast's id", () => {
+	const { ctl } = setup({ dedupeWindow: 1000 });
+	const first = ctl.error("Timeout");
+
+	assert.equal(ctl.error("Timeout"), first);
+	assert.equal(ctl.store.items.length, 1);
+});
+
+test("meta.duration overrides the timeout per toast; 0 is sticky", async () => {
+	const { ctl } = setup({ timeout: 10 });
+
+	ctl.push("info", "quick");
+	ctl.push("info", "sticky", { duration: 0 });
+	ctl.push("info", "slow", { duration: 60 });
+	await wait(30);
+	assert.deepEqual(ctl.store.items.map((t) => t.content), ["sticky", "slow"]);
+	await wait(50);
+	assert.deepEqual(ctl.store.items.map((t) => t.content), ["sticky"]);
+});
+
+test("pause keeps the remaining time; resume restarts it", async () => {
+	const { ctl } = setup({ timeout: 40 });
+	const id = ctl.push("info", "hover me");
+
+	await wait(10);
+	ctl.pause(id);
+	await wait(50);
+	assert.equal(ctl.store.items.length, 1, "a paused toast does not expire");
+	ctl.resume(id);
+	await wait(10);
+	assert.equal(ctl.store.items.length, 1, "resumes with the time it had left, not zero");
+	await wait(40);
+	assert.equal(ctl.store.items.length, 0);
+});
+
+test("pause()/resume() without an id act on every toast", async () => {
+	const { ctl } = setup({ timeout: 20 });
+
+	ctl.push("info", "a");
+	ctl.push("info", "b");
+	ctl.pause();
+	await wait(40);
+	assert.equal(ctl.store.items.length, 2);
+	ctl.resume();
+	await wait(40);
+	assert.equal(ctl.store.items.length, 0);
+});
+
+test("exitMs: dismiss marks removed, deletes later; pushing the id again revives it", async () => {
+	const { ctl, root } = setup({ exitMs: 20 });
+	const id = ctl.push("info", "bye", { id: "t" });
+
+	ctl.dismiss(id);
+	assert.equal(ctl.store.items[0].removed, true);
+	assert.ok(root.querySelector(".qrp-toast-exit"));
+	ctl.dismiss(id);   // dismissing again while exiting is a no-op
+
+	ctl.push("info", "back", { id: "t" });
+	assert.equal(ctl.store.items[0].removed, false);
+	await wait(40);
+	assert.equal(ctl.store.items.length, 1, "the revived toast is not deleted by the old exit timer");
+
+	ctl.dismiss("t");
+	await wait(40);
+	assert.equal(ctl.store.items.length, 0);
+});
+
+test("any variant: the 'toast' bus event and extra `variants` names", () => {
+	const { bus, ctl } = setup({ variants: ["loading"] });
+
+	bus.emit("toast", { variant: "default", content: "Hi", description: "there" });
+	bus.emit("loading", { message: "Saving…", id: "save" });
+
+	assert.deepEqual(ctl.store.items.map((t) => [t.variant, t.content]), [["default", "Hi"], ["loading", "Saving…"]]);
+	assert.equal(ctl.store.items[0].description, "there");
+	assert.equal(ctl.store.items[1].id, "save");
+});
