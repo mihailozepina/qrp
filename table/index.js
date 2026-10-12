@@ -42,7 +42,7 @@
  * the ▲/▼ text (dir: 1 asc, -1 desc, 0 not the sort column).
  */
 
-import { el, list, state, when } from "../qrp/index.js";
+import { el, list, state, when, effect } from "../qrp/index.js";
 import { collection } from "../collection/index.js";
 
 const resolveValue = (fieldSpec, item) => {
@@ -53,6 +53,36 @@ const resolveValue = (fieldSpec, item) => {
 
 // Join class parts, skipping empty ones (no stray double/trailing spaces).
 const join = (...parts) => parts.filter(Boolean).join(" ");
+
+/**
+ * Keep `node`'s attributes in sync with `attrsFn()` — reactive (an effect owned
+ * by the row/cell being built); attributes it stops returning are removed.
+ * null/false removes, true sets an empty attribute.
+ */
+const bindAttrs = (node, attrsFn) => {
+	let previous = [];
+
+	effect(() => {
+		const next = attrsFn() || {};
+		const keys = Object.keys(next);
+
+		previous.filter((key) => !keys.includes(key)).forEach((key) => node.removeAttribute(key));
+
+		keys.forEach((key) => {
+			const value = next[key];
+
+			if(value === null || value === undefined || value === false) {
+				node.removeAttribute(key);
+			} else {
+				node.setAttribute(key, value === true ? "" : String(value));
+			}
+		});
+
+		previous = keys;
+	});
+
+	return node;
+};
 
 const sortValue = (fieldSpec, item) => {
 	const raw = resolveValue(fieldSpec, item);
@@ -83,10 +113,17 @@ const sortValue = (fieldSpec, item) => {
  *   item => string function
  * @param {Function} [options.sortIndicator] (dir) => Renderable for sortable
  *   headers; dir is 1 (asc), -1 (desc) or 0 (not sorted by this column)
+ * @param {object} [options.attrs] reactive attribute hooks: { tr: item => attrs,
+ *   td: (column, item) => attrs, th: column => attrs } (e.g. data-state,
+ *   aria-selected on a selected row)
+ * @param {object} [options.view] an existing collection() or dataGrid to render
+ *   through instead of building one — it then owns rows/sort/filter/page, and
+ *   those options (and filterFn) are ignored; sorting uses ITS compare
  * @returns {HTMLTableElement} the table element (with .view = collection)
  */
 export const table = (options) => {
 	const classes = options.classes || {};
+	const attrs = options.attrs || {};
 	// `fields` may be a THUNK (() => Column[]) for reactive column sets — a
 	// visibility toggle, role-gated columns. currentFields() reads the live set;
 	// dynamicFields gates the reactive-region path so static tables keep the
@@ -100,9 +137,13 @@ export const table = (options) => {
 	// Wrapped, not just defaulted: a plain `sort: { key: "count", dir: -1 }`
 	// used to render the right initial order and then never respond to a header
 	// click (the indicator arrow stuck on the initial column) — see collection().
-	const sort = state(options.sort || { key: options.sortField || null, dir: options.sortDesc ? -1 : 1 });
+	// A shared view (collection / dataGrid) wins: one sort/filter/page pass that
+	// the table and its toolbar both read, instead of two collections.
+	const sort = options.view
+		? options.view.sort
+		: state(options.sort || { key: options.sortField || null, dir: options.sortDesc ? -1 : 1 });
 
-	const view = collection(source, {
+	const view = options.view || collection(source, {
 		sort,
 		page: options.page,
 		filter: options.filter,
@@ -163,10 +204,12 @@ export const table = (options) => {
 			? el("span", { onclick: (e) => e.stopPropagation() }, fieldSpec.header(fieldSpec))
 			: fieldSpec.label;
 
-		return el("th", props,
+		const th = el("th", props,
 			content,
 			fieldSpec.sortable ? el("span", { class: "qrp-sort" }, () => indicator(fieldSpec)) : null
 		);
+
+		return attrs.th ? bindAttrs(th, () => attrs.th(fieldSpec)) : th;
 	};
 
 	// A row's element is reused across sort/filter AND across data refetches
@@ -210,18 +253,18 @@ export const table = (options) => {
 		const cellClass = join(classes.td, fieldSpec.tdClass);
 		const props = cellClass ? { class: cellClass } : {};
 
-		if(fieldSpec.render) {
-			// Reactive: re-invoke render when the row's item is replaced (refetch),
-			// so custom/action cells reflect fresh data instead of the item they
-			// were built with. Reading holder.item in the thunk tracks it.
-			return el("td", props, () => fieldSpec.render(holder.item));
-		}
+		// Reactive: re-invoke render/formatter when the row's item is replaced
+		// (refetch), so cells reflect fresh data instead of the item they were
+		// built with. Reading holder.item in the thunk tracks it.
+		const td = fieldSpec.render
+			? el("td", props, () => fieldSpec.render(holder.item))
+			: el("td", props, () => {
+				const raw = resolveValue(fieldSpec, holder.item);
 
-		return el("td", props, () => {
-			const raw = resolveValue(fieldSpec, holder.item);
+				return fieldSpec.formatter ? fieldSpec.formatter(raw, holder.item) : raw;
+			});
 
-			return fieldSpec.formatter ? fieldSpec.formatter(raw, holder.item) : raw;
-		});
+		return attrs.td ? bindAttrs(td, () => attrs.td(fieldSpec, holder.item)) : td;
 	};
 
 	// Expandable rows: a per-key open flag + a detail panel rendered below the
@@ -256,9 +299,11 @@ export const table = (options) => {
 
 		// Static fields → build cells once (fast path). Dynamic fields → a reactive
 		// region so a column toggle re-renders the cells (row element preserved).
-		return dynamicFields
+		const tr = dynamicFields
 			? el("tr", props, () => cellsFor(holder, currentFields()))
 			: el("tr", props, ...cellsFor(holder, options.fields || []));
+
+		return attrs.tr ? bindAttrs(tr, () => attrs.tr(holder.item)) : tr;
 	};
 
 	// A row group: the row plus its (conditional) detail row. Only used when

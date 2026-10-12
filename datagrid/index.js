@@ -22,7 +22,7 @@
  *   grid.setPageSize(25);     grid.pageWindow(5);     grid.next();
  */
 
-import { state } from "../qrp/index.js";
+import { state, batch } from "../qrp/index.js";
 import { collection } from "../collection/index.js";
 
 /**
@@ -71,8 +71,10 @@ export const dataGrid = (source, options = {}) => {
 	// reported as selected.
 	const selectedItems = () => view.filtered().filter(isSelected);
 
-	const clearSelection = () => selectedIds().forEach((id) => { delete selection[id]; });
-	const selectAll = () => view.filtered().forEach(select);
+	// Multi-key writes run in one batch(), so a dependent (the "n selected"
+	// counter, a header checkbox) re-runs once, not once per row.
+	const clearSelection = () => batch(() => selectedIds().forEach((id) => { delete selection[id]; }));
+	const selectAll = () => batch(() => view.filtered().forEach(select));
 
 	// Header-checkbox state over the filtered set.
 	const allSelected = () => {
@@ -107,10 +109,10 @@ export const dataGrid = (source, options = {}) => {
 	const visibleColumns = () => columns.filter((column) => isVisible(column.key));
 
 	// --- page-size + windowed pager ------------------------------------------
-	const setPageSize = (size) => {
+	const setPageSize = (size) => batch(() => {
 		view.page.size = size;
 		view.page.index = 0;   // a resize shifts every row; return to the top
-	};
+	});
 
 	const goto = (index) => {
 		const last = Math.max(0, view.pageCount() - 1);

@@ -121,3 +121,39 @@ test("selection state is reactive", () => {
 	grid.toggle(store.rows[0]);
 	assert.equal(count, 1, "effect re-ran on selection change");
 });
+
+test("selectAll / clearSelection / toggleAll / setPageSize run dependents once (batched)", () => {
+	const rows = Array.from({ length: 50 }, (_, i) => ({ id: i }));
+	const grid = dataGrid(() => rows, { key: (r) => r.id, pageSizes: [] });
+	let runs = 0;
+
+	effect(() => {
+		grid.selectedIds().length;
+		runs += 1;
+	});
+
+	runs = 0;
+	grid.selectAll();
+	assert.equal(runs, 1, "one effect run for 50 selections");
+	assert.equal(grid.selectedIds().length, 50);
+
+	runs = 0;
+	grid.clearSelection();
+	assert.equal(runs, 1);
+
+	runs = 0;
+	grid.toggleAll();
+	assert.equal(runs, 1);
+
+	let pageRuns = 0;
+
+	effect(() => {
+		grid.view.page.size;
+		grid.view.page.index;
+		pageRuns += 1;
+	});
+
+	pageRuns = 0;
+	grid.setPageSize(25);
+	assert.equal(pageRuns, 1);
+});

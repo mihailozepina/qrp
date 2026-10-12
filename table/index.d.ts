@@ -6,7 +6,9 @@
  * may be a thunk for reactive columns; `expandable` adds detail rows. The
  * returned table has `.view` (the collection, for `tablePager`/`tableSummary`)
  * plus `.expanded`/`.toggleRow`. Every part carries a stable `qrp-*` class; style
- * it through a design system with `classes` (per part) and `sortIndicator`.
+ * it through a design system with `classes` (per part), `attrs` (reactive
+ * attributes per part) and `sortIndicator`; share a `collection`/`dataGrid` with
+ * the `view` option.
  * @example
  * const t = table({
  *   rows: () => store.rows, key: (r) => r.id, filter, page,
@@ -78,6 +80,18 @@ export interface TableOptions<T> {
 	/** Custom sort indicator for sortable headers (replaces ▲/▼). `dir` is 1
 	 *  (ascending), -1 (descending) or 0 (not the sort column). */
 	sortIndicator?: (dir: 1 | -1 | 0) => Renderable;
+	/** Reactive attribute hooks (null/false removes): a selected row's
+	 *  `data-state`/`aria-selected`, a cell's `data-label`, a header's `scope`. */
+	attrs?: {
+		tr?: (item: T) => Record<string, string | number | boolean | null | undefined>;
+		td?: (column: Column<T>, item: T) => Record<string, string | number | boolean | null | undefined>;
+		th?: (column: Column<T>) => Record<string, string | number | boolean | null | undefined>;
+	};
+	/** Render through an existing collection() or dataGrid (anything with
+	 *  `items()`, `sort` and `toggleSort`) instead of building a second one. It
+	 *  owns rows/sort/filter/page — those options and `filterFn` are ignored —
+	 *  and sorting uses its compare. Share it with a toolbar/pager so both agree. */
+	view?: Pick<Collection<T>, "items" | "sort" | "toggleSort"> & Partial<Collection<T>>;
 	sortField?: string;
 	sortDesc?: boolean;
 }

@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 
 import { state, el } from "../qrp/index.js";
 import { table, tablePager, tableSummary } from "../table/index.js";
+import { collection } from "../collection/index.js";
+import { dataGrid } from "../datagrid/index.js";
 
 const rows = () => [
 	{ id: 1, account: { name: "carol" }, followers: 1200 },
@@ -455,4 +457,69 @@ test("tablePager classes", () => {
 
 	assert.equal(active.className, "qrp-pager-btn btn active btn-active");
 	assert.equal(nav.querySelector(".qrp-pager-gap").className, "qrp-pager-gap dots");
+});
+
+// --- view (shared collection / dataGrid) and attrs hooks --------------------
+
+test("table({ view }) renders through a shared collection instead of building its own", () => {
+	const store = state({ rows: [{ id: 1, n: "b" }, { id: 2, n: "a" }, { id: 3, n: "c" }] });
+	const shared = collection(() => store.rows, {
+		sort: { key: "n", dir: 1 },
+		page: state({ index: 0, size: 2 }),
+		compare: (a, b, sort) => (a[sort.key] > b[sort.key] ? 1 : -1) * sort.dir
+	});
+	const t = table({ view: shared, rows: () => [], fields: [{ key: "n", label: "N", sortable: true }] });
+	const cells = () => [...t.querySelectorAll("tbody td")].map((td) => td.textContent);
+
+	assert.ok(t.view === shared, "the table exposes the shared view, not a copy");
+	assert.deepEqual(cells(), ["a", "b"], "rows/sort/page come from the view; the rows option is ignored");
+
+	shared.page.index = 1;
+	assert.deepEqual(cells(), ["c"], "paging the shared view pages the table");
+
+	shared.page.index = 0;
+	t.querySelector("th").click();
+	assert.equal(shared.sort.dir, -1, "header clicks sort the shared view");
+	assert.deepEqual(cells(), ["c", "b"]);
+});
+
+test("table({ view: dataGrid }) — grid selection drives row attrs", () => {
+	const rows = [{ id: 1, n: "a" }, { id: 2, n: "b" }];
+	const grid = dataGrid(() => rows, { key: (r) => r.id, pageSizes: [] });
+	const t = table({
+		view: grid,
+		key: (r) => r.id,
+		fields: [{ key: "n", label: "N" }],
+		attrs: {
+			tr: (item) => ({ "data-state": grid.isSelected(item) ? "selected" : null, "aria-selected": grid.isSelected(item) }),
+			td: (column) => ({ "data-label": column.label }),
+			th: (column) => ({ scope: "col", "data-key": column.key })
+		}
+	});
+	const [first] = t.querySelectorAll("tbody tr");
+
+	assert.equal(first.hasAttribute("data-state"), false);
+	assert.equal(first.hasAttribute("aria-selected"), false, "false removes the attribute");
+	grid.toggle(rows[0]);
+	assert.equal(first.getAttribute("data-state"), "selected");
+	assert.equal(first.getAttribute("aria-selected"), "");
+	grid.toggle(rows[0]);
+	assert.equal(first.hasAttribute("data-state"), false, "attributes follow the selection back off");
+	assert.equal(t.querySelector("tbody td").getAttribute("data-label"), "N");
+	assert.equal(t.querySelector("th").getAttribute("scope"), "col");
+	assert.equal(t.querySelector("th").getAttribute("data-key"), "n");
+});
+
+test("attrs: an attribute the hook stops returning is removed", () => {
+	const flag = state({ on: true });
+	const t = table({
+		rows: [{ id: 1, n: "a" }],
+		fields: [{ key: "n", label: "N" }],
+		attrs: { tr: () => (flag.on ? { "data-x": "1" } : {}) }
+	});
+	const tr = t.querySelector("tbody tr");
+
+	assert.equal(tr.getAttribute("data-x"), "1");
+	flag.on = false;
+	assert.equal(tr.hasAttribute("data-x"), false);
 });
