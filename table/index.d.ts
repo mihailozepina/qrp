@@ -5,7 +5,8 @@
  * render?, header?, sortable?, sortByFormatted?, thClass?, tdClass? }`. `fields`
  * may be a thunk for reactive columns; `expandable` adds detail rows. The
  * returned table has `.view` (the collection, for `tablePager`/`tableSummary`)
- * plus `.expanded`/`.toggleRow`.
+ * plus `.expanded`/`.toggleRow`. Every part carries a stable `qrp-*` class; style
+ * it through a design system with `classes` (per part) and `sortIndicator`.
  * @example
  * const t = table({
  *   rows: () => store.rows, key: (r) => r.id, filter, page,
@@ -71,8 +72,26 @@ export interface TableOptions<T> {
 	rowClass?: (item: T) => string;
 	/** Extra class(es) for the <table>. */
 	class?: string;
+	/** Extra classes per part, merged with the qrp-* classes and the per-column
+	 *  thClass/tdClass and rowClass. `tr` may be a function of the row's item. */
+	classes?: TableClasses<T>;
+	/** Custom sort indicator for sortable headers (replaces ▲/▼). `dir` is 1
+	 *  (ascending), -1 (descending) or 0 (not the sort column). */
+	sortIndicator?: (dir: 1 | -1 | 0) => Renderable;
 	sortField?: string;
 	sortDesc?: boolean;
+}
+
+/** Extra classes for each part of a table(). */
+export interface TableClasses<T> {
+	thead?: string;
+	headRow?: string;
+	th?: string;
+	tbody?: string;
+	tr?: string | ((item: T) => string);
+	td?: string;
+	expandRow?: string;
+	expandCell?: string;
 }
 
 /** The table element: `.view` (the collection), plus expansion controls. */
@@ -88,7 +107,11 @@ export type TableElement<T> = HTMLTableElement & {
 export function table<T>(options: TableOptions<T>): TableElement<T>;
 
 /** A stock prev / windowed-pages / next control for a table().view (or any collection). */
-export function tablePager(view: Collection<any>, options?: { window?: number }): HTMLElement;
+export function tablePager(view: Collection<any>, options?: {
+	window?: number;
+	/** Extra classes: the <nav>, every button, the current page's button, the "…" gap. */
+	classes?: { nav?: string; button?: string; active?: string; gap?: string };
+}): HTMLElement;
 
 /** A reactive "Showing X–Y of Z" summary for a table().view (or any collection). */
 export function tableSummary(view: Collection<any>, options?: {

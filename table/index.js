@@ -34,6 +34,12 @@
  *   sortable       header toggles sort on this column
  *   sortByFormatted  sort by formatter output instead of the raw value
  *   thClass/tdClass  class strings for header/cell (e.g. responsive-hide)
+ *
+ * Styling hooks (for a design system like Tailwind/shadcn): every element gets a
+ * stable qrp-* class, and `classes: { thead, headRow, th, tbody, tr, td,
+ * expandRow, expandCell }` adds yours on top (merged with the per-column
+ * thClass/tdClass and rowClass). `sortIndicator: (dir) => Renderable` replaces
+ * the ▲/▼ text (dir: 1 asc, -1 desc, 0 not the sort column).
  */
 
 import { el, list, state, when } from "../qrp/index.js";
@@ -44,6 +50,9 @@ const resolveValue = (fieldSpec, item) => {
 
 	return accessor(item);
 };
+
+// Join class parts, skipping empty ones (no stray double/trailing spaces).
+const join = (...parts) => parts.filter(Boolean).join(" ");
 
 const sortValue = (fieldSpec, item) => {
 	const raw = resolveValue(fieldSpec, item);
@@ -69,9 +78,15 @@ const sortValue = (fieldSpec, item) => {
  * @param {Function} [options.filterFn] (item, filterState) => boolean
  * @param {Function} [options.rowClass] item => class string for the <tr>
  * @param {string} [options.class] extra class(es) for the <table>
+ * @param {object} [options.classes] extra classes per part: { thead, headRow,
+ *   th, tbody, tr, td, expandRow, expandCell } — strings; `tr` may also be an
+ *   item => string function
+ * @param {Function} [options.sortIndicator] (dir) => Renderable for sortable
+ *   headers; dir is 1 (asc), -1 (desc) or 0 (not sorted by this column)
  * @returns {HTMLTableElement} the table element (with .view = collection)
  */
 export const table = (options) => {
+	const classes = options.classes || {};
 	// `fields` may be a THUNK (() => Column[]) for reactive column sets — a
 	// visibility toggle, role-gated columns. currentFields() reads the live set;
 	// dynamicFields gates the reactive-region path so static tables keep the
@@ -110,20 +125,36 @@ export const table = (options) => {
 		}
 	});
 
-	const indicator = (fieldSpec) => {
+	// 1 asc, -1 desc, 0 when another column (or none) is the sort.
+	const sortDir = (fieldSpec) => {
 		if(sort.key !== fieldSpec.key) {
+			return 0;
+		}
+
+		return sort.dir === -1 ? -1 : 1;
+	};
+
+	const indicator = (fieldSpec) => {
+		const dir = sortDir(fieldSpec);
+
+		if(options.sortIndicator) {
+			return options.sortIndicator(dir);
+		}
+
+		if(dir === 0) {
 			return "";
 		}
 
-		return sort.dir === -1 ? " ▼" : " ▲";
+		return dir === -1 ? " ▼" : " ▲";
 	};
 
 	const headerCell = (fieldSpec) => {
-		const props = { class: () => "qrp-th " + (fieldSpec.thClass || "") };
+		const props = { class: () => join("qrp-th", classes.th, fieldSpec.thClass) };
 
 		if(fieldSpec.sortable) {
-			props.class = () => "qrp-th qrp-sortable " + (fieldSpec.thClass || "");
+			props.class = () => join("qrp-th qrp-sortable", classes.th, fieldSpec.thClass);
 			props.onclick = () => view.toggleSort(fieldSpec.key);
+			props["aria-sort"] = () => ({ 1: "ascending", "-1": "descending" })[sortDir(fieldSpec)] || null;
 		}
 
 		// header() gives full control of the th content (a select-all checkbox, a
@@ -176,7 +207,8 @@ export const table = (options) => {
 	};
 
 	const bodyCell = (fieldSpec, holder) => {
-		const props = fieldSpec.tdClass ? { class: fieldSpec.tdClass } : {};
+		const cellClass = join(classes.td, fieldSpec.tdClass);
+		const props = cellClass ? { class: cellClass } : {};
 
 		if(fieldSpec.render) {
 			// Reactive: re-invoke render when the row's item is replaced (refetch),
@@ -203,8 +235,11 @@ export const table = (options) => {
 	const row = (holder) => {
 		const props = {};
 
-		if(options.rowClass) {
-			props.class = () => options.rowClass(holder.item);
+		if(options.rowClass || classes.tr) {
+			props.class = () => join(
+				typeof classes.tr === "function" ? classes.tr(holder.item) : classes.tr,
+				options.rowClass ? options.rowClass(holder.item) : ""
+			);
 		}
 
 		if(expandable) {
@@ -228,28 +263,30 @@ export const table = (options) => {
 
 	// A row group: the row plus its (conditional) detail row. Only used when
 	// expandable — one <tbody> per key so the detail <tr> stays with its row.
-	const rowGroup = (holder) => el("tbody", { class: "qrp-rowgroup" },
+	const rowGroup = (holder) => el("tbody", { class: join("qrp-rowgroup", classes.tbody) },
 		row(holder),
 		when(() => !!open[holder.key], () =>
-			el("tr", { class: "qrp-expand" },
+			el("tr", { class: join("qrp-expand", classes.expandRow) },
 				// A THUNK, like a render: cell — the panel is rebuilt when the row's
 				// item is replaced (refetch). Without it an open panel kept showing
 				// the values it was built with while the row's own cells updated
 				// around it, so a live dashboard's detail view silently went stale.
-				el("td", { colspan: () => currentFields().length }, () => expandable(holder.item))))
+				el("td", Object.assign({ colspan: () => currentFields().length }, classes.expandCell ? { class: classes.expandCell } : {}),
+					() => expandable(holder.item))))
 	);
 
+	const headRowProps = classes.headRow ? { class: classes.headRow } : {};
 	const headerRow = dynamicFields
-		? el("tr", {}, () => currentFields().map(headerCell))
-		: el("tr", {}, ...(options.fields || []).map(headerCell));
+		? el("tr", headRowProps, () => currentFields().map(headerCell))
+		: el("tr", headRowProps, ...(options.fields || []).map(headerCell));
 
-	const node = el("table", { class: "qrp-table " + (options.class || "") },
-		el("thead", {}, headerRow),
+	const node = el("table", { class: join("qrp-table", options.class) },
+		el("thead", classes.thead ? { class: classes.thead } : {}, headerRow),
 		// non-expandable → one <tbody> of <tr> (unchanged). expandable → a list of
 		// <tbody> row-groups (multiple tbodies is valid HTML).
 		expandable
 			? list(holderSource, (holder) => holder.key, rowGroup)
-			: el("tbody", {}, list(holderSource, (holder) => holder.key, row))
+			: el("tbody", classes.tbody ? { class: classes.tbody } : {}, list(holderSource, (holder) => holder.key, row))
 	);
 
 	// Expose the collection controller (pagination/totals UI) + expansion control.
@@ -294,10 +331,12 @@ const pageWindow = (current, count, window) => {
  * @param {object} view a collection controller (table().view)
  * @param {object} [options]
  * @param {number} [options.window] page numbers to show either side of current (default 1)
+ * @param {object} [options.classes] extra classes: { nav, button, active, gap }
  * @returns {HTMLElement}
  */
 export const tablePager = (view, options = {}) => {
 	const window = options.window === undefined ? 1 : options.window;
+	const classes = options.classes || {};
 
 	const go = (index) => {
 		view.page.index = Math.max(0, Math.min(index, view.pageCount() - 1));
@@ -305,13 +344,13 @@ export const tablePager = (view, options = {}) => {
 
 	const button = (label, target, { active, disabled } = {}) => el("button", {
 		type: "button",
-		class: "qrp-pager-btn" + (active ? " active" : ""),
+		class: join("qrp-pager-btn", classes.button, active && "active", active && classes.active),
 		disabled: !!disabled,
 		"aria-current": active ? "page" : null,
 		onclick: () => go(target)
 	}, label);
 
-	return el("nav", { class: "qrp-pager", "aria-label": "Pagination" }, () => {
+	return el("nav", { class: join("qrp-pager", classes.nav), "aria-label": "Pagination" }, () => {
 		const count = view.pageCount();
 		const current = view.page.index;
 
@@ -323,7 +362,7 @@ export const tablePager = (view, options = {}) => {
 			button("‹", current - 1, { disabled: current === 0 }),
 			...pageWindow(current, count, window).map(page =>
 				page === "…"
-					? el("span", { class: "qrp-pager-gap" }, "…")
+					? el("span", { class: join("qrp-pager-gap", classes.gap) }, "…")
 					: button(String(page + 1), page, { active: page === current })),
 			button("›", current + 1, { disabled: current === count - 1 })
 		];

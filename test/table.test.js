@@ -378,3 +378,81 @@ test("an OPEN expandable panel refreshes when the row's item is replaced", () =>
 	assert.equal(t.querySelector("tbody td").textContent, "99", "the cell updated");
 	assert.equal(t.querySelector(".detail").textContent, "n=99", "and so did the open panel");
 });
+
+test("table classes: every part gets the qrp-* class plus the configured ones", () => {
+	const rows = state({ list: [{ id: 1, name: "a", hot: true }, { id: 2, name: "b", hot: false }] });
+	const t = table({
+		rows: () => rows.list,
+		class: "w-full",
+		classes: {
+			thead: "[&_tr]:border-b", headRow: "h-row", th: "h-10 px-2", tbody: "body",
+			tr: (item) => (item.hot ? "hot" : "cold"), td: "p-2"
+		},
+		rowClass: () => "extra",
+		fields: [{ key: "name", label: "Name", thClass: "col-name", tdClass: "cell-name" }]
+	});
+
+	assert.equal(t.className, "qrp-table w-full");
+	assert.equal(t.querySelector("thead").className, "[&_tr]:border-b");
+	assert.equal(t.querySelector("thead tr").className, "h-row");
+	assert.equal(t.querySelector("th").className, "qrp-th h-10 px-2 col-name");
+	assert.equal(t.querySelector("tbody").className, "body");
+
+	const trs = t.querySelectorAll("tbody tr");
+
+	assert.equal(trs[0].className, "hot extra");
+	assert.equal(trs[1].className, "cold extra");
+	assert.equal(trs[0].querySelector("td").className, "p-2 cell-name");
+});
+
+test("table classes on expandable rows", () => {
+	const t = table({
+		rows: [{ id: 1, name: "a" }],
+		classes: { tbody: "group", expandRow: "detail", expandCell: "detail-cell" },
+		expandable: (item) => `details of ${item.name}`,
+		fields: [{ key: "name", label: "Name" }]
+	});
+
+	assert.equal(t.querySelector("tbody").className, "qrp-rowgroup group");
+	t.toggleRow(1);
+	assert.equal(t.querySelector("tr.qrp-expand").className, "qrp-expand detail");
+	assert.equal(t.querySelector("tr.qrp-expand td").className, "detail-cell");
+});
+
+test("table sortIndicator replaces the arrows and aria-sort tracks the sort", () => {
+	const t = table({
+		rows: [{ id: 1, n: 2 }, { id: 2, n: 1 }],
+		sortIndicator: (dir) => el("i", { "data-dir": String(dir) }),
+		fields: [{ key: "n", label: "N", sortable: true }, { key: "id", label: "Id", sortable: true }]
+	});
+	const [nHead, idHead] = t.querySelectorAll("th");
+
+	assert.equal(nHead.querySelector("i").dataset.dir, "0");
+	assert.equal(nHead.hasAttribute("aria-sort"), false);
+
+	nHead.click();
+	assert.equal(nHead.querySelector("i").dataset.dir, "1");
+	assert.equal(nHead.getAttribute("aria-sort"), "ascending");
+	assert.equal(idHead.querySelector("i").dataset.dir, "0");
+
+	nHead.click();
+	assert.equal(nHead.querySelector("i").dataset.dir, "-1");
+	assert.equal(nHead.getAttribute("aria-sort"), "descending");
+	assert.equal(nHead.textContent.includes("▼"), false, "no default arrows with a custom indicator");
+});
+
+test("tablePager classes", () => {
+	const t = table({
+		rows: Array.from({ length: 25 }, (_, i) => ({ id: i })),
+		page: state({ index: 0, size: 5 }),
+		fields: [{ key: "id", label: "Id" }]
+	});
+	const nav = tablePager(t.view, { classes: { nav: "flex", button: "btn", active: "btn-active", gap: "dots" } });
+
+	assert.equal(nav.className, "qrp-pager flex");
+
+	const active = nav.querySelector("[aria-current=page]");
+
+	assert.equal(active.className, "qrp-pager-btn btn active btn-active");
+	assert.equal(nav.querySelector(".qrp-pager-gap").className, "qrp-pager-gap dots");
+});
