@@ -6,6 +6,10 @@ find out by reading a diff. Newest first.
 
 ## Unreleased
 
+_(nothing yet)_
+
+## 0.11.0
+
 - ⚠️ **BREAKING (behavior): `dismissable` is nesting-aware.** All live
   dismissables now form one layer stack. Escape dismisses only the most recently
   opened layer that listens for it, and an outside pointerdown dismisses layers
@@ -26,7 +30,9 @@ find out by reading a diff. Newest first.
   `--qrp-transform-origin`, `--qrp-anchor-width/-height`,
   `--qrp-available-width/-height`, accepts a virtual reference, and re-places on
   floating-element resize. New `pointAt(x, y)` for context menus. Default options
-  give the same positions as before.
+  give the same positions as before whenever the preferred side fits; when
+  neither side fits it now picks the roomier one (before: overflowed the bottom),
+  a top placement can flip down, and the element is kept on screen horizontally.
 - **`disclosure`: controlled modes + richer `connect`.** `disclosure(initial,
   { onChange })` — `initial` may be a boolean (as before), a `[state, "key"]`
   tuple (two-way bound) or a thunk (driven: toggles only call `onChange`).
