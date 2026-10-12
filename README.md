@@ -11,7 +11,7 @@ A data-first, declarative frontend framework for the browser — reactivity is a
 [![dependencies](https://img.shields.io/badge/dependencies-0-34d399?style=flat-square&labelColor=0a0d12)](#-tests--tooling)
 [![build step](https://img.shields.io/badge/build_step-optional-34d399?style=flat-square&labelColor=0a0d12)](#-what-is-qrp)
 [![core size](https://img.shields.io/badge/core-~5.0_KB_min%2Bgzip-ffb23e?style=flat-square&labelColor=0a0d12)](#-performance)
-[![tests](https://img.shields.io/badge/tests-360_passing-34d399?style=flat-square&labelColor=0a0d12)](#-tests--tooling)
+[![tests](https://img.shields.io/badge/tests-361_passing-34d399?style=flat-square&labelColor=0a0d12)](#-tests--tooling)
 [![types](https://img.shields.io/badge/TypeScript-.d.ts_included-ffb23e?style=flat-square&labelColor=0a0d12)](#-typescript)
 [![license](https://img.shields.io/npm/l/@nemanjan00/qrp?style=flat-square&labelColor=0a0d12&color=34d399)](LICENSE)
 
@@ -607,7 +607,7 @@ test("rows render and react to a state write", () => {
 ```
 
 Writes are synchronous, so there's nothing to `await` — the assertion runs right
-after the state write. This is how qrp tests *itself* (360 tests, `node --test` +
+after the state write. This is how qrp tests *itself* (361 tests, `node --test` +
 happy-dom); your app tests the same way.
 
 ## 📖 API reference
@@ -619,7 +619,7 @@ Full reference — every export, signature, and a usage snippet per module — i
 
 ```sh
 npm install     # dev-only: happy-dom (tests), eslint, typescript, husky
-npm test        # node --test — 360 tests across every module
+npm test        # node --test — 361 tests across every module
 npm run lint    # eslint (eslint:recommended + house style)
 npm run typecheck  # tsc --noEmit over the .d.ts + a usage suite (strict)
 ```

@@ -8,6 +8,15 @@ find out by reading a diff. Newest first.
 
 _(nothing yet)_
 
+## 0.12.2
+
+- **Fix: `setOwner()` (and so `portal()`) could re-enter the running effect.**
+  It bumped the readers' version synchronously; `portal()` runs inside an
+  overlay's open effect, so an effect that also read a context re-ran in the
+  middle of opening — and could open the overlay again, recursively. Owner
+  changes now re-run readers on a coalesced microtask. `provide()` stays
+  synchronous (readers built earlier in the same construction rely on it).
+
 ## 0.12.1
 
 - **Fix (regression in 0.12.0): `toasts.dismiss()` ignored items flagged

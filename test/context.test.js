@@ -101,3 +101,26 @@ test("portaled content resolves through where it came from, or an explicit owner
 	undoB();
 	provider.remove();
 });
+
+test("setOwner re-runs readers on a microtask, never synchronously (no re-entry mid-update)", async () => {
+	const Ctx = createContext("none");
+	const provider = Ctx.provide(el("div"), "found");
+	const floating = el("div");
+	let runs = 0;
+	let seen;
+
+	document.body.append(provider);
+	effect(() => {
+		runs += 1;
+		seen = Ctx.read(floating);
+	});
+
+	const before = runs;
+
+	setOwner(floating, provider);
+	assert.equal(runs, before, "no synchronous re-run");
+	await microtask();
+	await microtask();
+	assert.equal(seen, "found");
+	provider.remove();
+});

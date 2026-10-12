@@ -40,7 +40,9 @@ export function createContext<T>(fallback?: T): Context<T>;
 /**
  * Give `node` a logical parent for context lookup — for content that lives
  * elsewhere in the DOM than where it belongs (an overlay portaled to <body>).
- * `null` clears it. Returns `node`.
+ * `null` clears it. Returns `node`. Readers re-run on a microtask (coalesced),
+ * never synchronously — so calling it mid-update (portal() inside an effect)
+ * can't re-enter that effect.
  */
 export function setOwner<N extends Node>(node: N, owner: Node | null): N;
 

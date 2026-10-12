@@ -33,6 +33,8 @@ import { state, effect } from "../qrp/index.js";
 const owners = new WeakMap();
 const ownership = state({ version: 0 });
 
+let ownershipQueued = false;
+
 let retryQueued = false;
 const retryQueue = new Set();
 
@@ -81,7 +83,18 @@ export const setOwner = (node, owner) => {
 		owners.delete(node);
 	}
 
-	ownership.version += 1;
+	// Deferred and coalesced: setOwner typically runs mid-update (portal() while
+	// an overlay opens inside an effect), and a synchronous bump would re-enter
+	// that very effect. An owner change never needs readers to re-run before the
+	// current update finishes. (provide() stays synchronous — early readers in
+	// the same construction rely on it.)
+	if(!ownershipQueued) {
+		ownershipQueued = true;
+		queueMicrotask(() => {
+			ownershipQueued = false;
+			ownership.version += 1;
+		});
+	}
 
 	return node;
 };
