@@ -6,7 +6,68 @@ find out by reading a diff. Newest first.
 
 ## Unreleased
 
-_(nothing yet)_
+- **New module: `context`** (`@nemanjan00/qrp/context`). `createContext(fallback)`
+  returns `{ provide, read, watch, find }`: a subtree provides a value, descendants
+  read the nearest one by walking DOM ancestors — the missing piece for compound
+  components (Tabs → its triggers, a sidebar → its parts) without threading a
+  controller through every call. Children are built before their parent, so
+  `read` is reactive: `provide()` re-runs readers that ran too early, and a
+  reader whose node is still detached (a `list()`/`when()` row being inserted)
+  gets one microtask retry. `watch(node, fn)` binds a read to an element (a
+  reactive prop can't reference the element `el()` is still building).
+  `setOwner(node, owner)` gives portaled content a logical parent;
+  **`portal()` now records it** (the node's previous parent, or
+  `options.owner`), so a menu moved to `<body>` still reads its component's
+  context.
+
+- **`toasts`: ids, updates, per-toast duration, pause/resume, an exit phase.**
+  `push()` (and the variant helpers) return the toast id; `meta.id` updates the
+  live toast with that id instead of adding one; `meta.duration` is a per-toast
+  timeout (0 / `Infinity` = sticky); any other meta field (`description`,
+  `action`, …) stays on the item for renderers. New `update(id, patch)` (merges
+  reactively; a `duration` in the patch restarts the countdown), `pause(id?)` /
+  `resume(id?)` (keep the remaining time; no id = all), and
+  `createToasts({ exitMs })`: `dismiss()` marks the item `removed: true` and
+  deletes it after `exitMs` so a renderer can animate the exit (default 0 =
+  today's behavior; pushing the same id during the exit revives it). Any variant
+  string works (`bus.emit("toast", { variant: "loading", … })`, or extra event
+  names via `createToasts({ variants })`); object bus payloads pass their extra
+  fields through as meta; a deduplicated message returns the original id. The
+  stock `component` pauses a hovered toast and adds `qrp-toast-exit` while it
+  leaves.
+- **`datagrid`: multi-row writes are batched.** `selectAll`, `clearSelection`,
+  `toggleAll` and `setPageSize` run in one `batch()` — an "n selected" counter
+  or header checkbox re-runs once per call, not once per row.
+- **`table`: share a view, set attributes per part.** `view` renders through an
+  existing `collection()` or `dataGrid` instead of building a second collection
+  (the view owns rows/sort/filter/page, so those options and `filterFn` are
+  ignored) — a toolbar or pager reading the same view always agrees with the
+  table. `attrs: { tr: item => ({…}), td: (column, item) => ({…}), th: column =>
+  ({…}) }` are reactive attribute hooks next to `classes` (e.g. `data-state` /
+  `aria-selected` on a selected row); `null`/`false` removes, `true` sets empty,
+  attributes the hook stops returning are removed.
+
+- **`spark`: several series, one chart.** `xDomain` / `yDomain` (`[min, max]` or
+  a thunk) put several sparks on shared axes — layer their `<svg>`s for
+  actual-vs-target or multi-series charts. `base` is the y baseline areas fill
+  down to and bars grow from (bars still default to zero; lines/areas to the
+  data's extent).
+- **`spark`: `curve`** — `"linear"` (default), `"monotone"` (never overshoots),
+  `"natural"` (cubic spline) or `"step"` for lines and areas.
+- **`spark`: stacking and grouped bars.** `stack` (array aligned with the data,
+  or `(d, i) => number`) is a per-point baseline for stacked areas and bars;
+  `group: [slot, slots]` places the slot-th of `slots` bars in each band, with
+  `gap` (default 0.2 — today's 80% bar) and `radius`.
+- **`spark`: `responsive`.** The `<svg>` fills its container and strokes get
+  `vector-effect: non-scaling-stroke`, so stretched lines keep their width.
+- **New: `project(source, opts)` in `spark`** returns the points the marks are
+  drawn from (`{ x, y, y0, index, datum }`, bars add `width`/`left`) — hit-test a
+  pointer against them for your own tooltip or cursor.
+- **New: `nice(domain, count)` in `scale`** rounds a domain out to whole 1/2/2.5/5
+  × 10ⁿ steps → `{ domain, step, ticks }`, float noise removed.
+- All spark defaults render as before (checked byte-for-byte against 0.11.0
+  for lines, bars and dots); area paths now trace the baseline back point by
+  point — same filled shape, different path text.
 
 ## 0.11.0
 

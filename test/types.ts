@@ -195,3 +195,68 @@ const styled = table<Row>({
 });
 tablePager(styled.view, { window: 2, classes: { nav: "n", button: "b", active: "a", gap: "g" } });
 void boundOpen;
+
+// --- context ----------------------------------------------------------------
+import { createContext, setOwner, ownerOf } from "../context/index.js";
+
+const Theme = createContext<"light" | "dark">("light");
+const themed: HTMLDivElement = Theme.provide(document.createElement("div"), "dark");
+const themeName: "light" | "dark" = Theme.read(themed);
+const watchedButton: HTMLButtonElement = Theme.watch(document.createElement("button"), (theme, node) => {
+	node.dataset.theme = theme;
+});
+const lookup: { found: boolean; provider: Node | null } = Theme.find(watchedButton);
+setOwner(watchedButton, themed);
+const owner: Node | null = ownerOf(watchedButton);
+// @ts-expect-error — not a value of the context's type
+Theme.provide(themed, "blue");
+void themeName; void lookup; void owner;
+
+// --- toasts ids/update/pause/exit, table view + attrs -----------------------
+{
+	const t = createToasts({ timeout: 4000, exitMs: 200, variants: ["loading"] });
+	const id = t.push("loading", "Saving…", { id: "save", duration: 0, description: "please wait" });
+	const ok: boolean = t.update(id, { variant: "success", content: "Saved", duration: 3000 });
+	t.pause(id);
+	t.resume();
+	t.dismiss(id);
+	const firstRemoved: boolean | undefined = t.store.items[0]?.removed;
+	const helperId: number | string = t.success("done");
+	void ok; void firstRemoved; void helperId;
+
+	interface Row { id: number; name: string; }
+	const grid = dataGrid<Row>(() => [], { key: (r) => r.id });
+	table<Row>({
+		rows: [],
+		view: grid,
+		fields: [{ key: "name" }],
+		attrs: {
+			tr: (row) => ({ "data-state": grid.isSelected(row) ? "selected" : null }),
+			td: (column, row) => ({ "data-label": column.label, "data-id": row.id }),
+			th: (column) => ({ scope: "col", "data-key": column.key })
+		}
+	});
+	// @ts-expect-error attrs.tr must return an attribute record
+	table<Row>({ rows: [], fields: [], attrs: { tr: () => 5 } });
+}
+
+// --- spark: shared domains, curves, stacking, grouping, project; scale.nice ----
+import { project, type SparkPoint } from "../spark/index.js";
+import { nice } from "../scale/index.js";
+
+{
+	const yAxis = nice([0, 97], 5);
+	const sharedY: [number, number] = yAxis.domain;
+	const ticksOut: number[] = yAxis.ticks;
+	const series = [{ month: 1, desktop: 186, mobile: 80 }, { month: 2, desktop: 305, mobile: 200 }];
+	const stacked: SVGElement = spark(() => series, {
+		kind: "area", x: "month", y: "mobile", yDomain: () => sharedY, xDomain: [1, 2],
+		stack: (d: { desktop: number }) => d.desktop, curve: "monotone", responsive: true
+	});
+	const grouped: SVGElement = spark(series, { kind: "bar", y: "desktop", group: [0, 2], gap: 0.1, radius: 4, base: 0 });
+	const hits: SparkPoint<{ month: number }>[] = project(series, { x: "month", y: "desktop", yDomain: sharedY });
+	const nearest: number = hits[0].x + hits[0].y0;
+	// @ts-expect-error — not a curve type
+	spark([1, 2], { curve: "bezier" });
+	void ticksOut; void stacked; void grouped; void nearest;
+}

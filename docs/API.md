@@ -30,6 +30,7 @@ next to each module, so editors resolve them with no build step.
 - [events](#events)
 - [toasts](#toasts)
 - [browser](#browser)
+- [context](#context)
 - [behaviors](#behaviors)
 - [utils](#utils)
 - [proto](#proto)
@@ -855,7 +856,9 @@ render?, header?, sortable?, sortByFormatted?, thClass?, tdClass? }`. `fields`
 may be a thunk for reactive columns; `expandable` adds detail rows. The
 returned table has `.view` (the collection, for `tablePager`/`tableSummary`)
 plus `.expanded`/`.toggleRow`. Every part carries a stable `qrp-*` class; style
-it through a design system with `classes` (per part) and `sortIndicator`.
+it through a design system with `classes` (per part), `attrs` (reactive
+attributes per part) and `sortIndicator`; share a `collection`/`dataGrid` with
+the `view` option.
 
 ### `table`
 
@@ -971,6 +974,18 @@ interface TableOptions<T> {
 	/** Custom sort indicator for sortable headers (replaces ▲/▼). `dir` is 1
 	 *  (ascending), -1 (descending) or 0 (not the sort column). */
 	sortIndicator?: (dir: 1 | -1 | 0) => Renderable;
+	/** Reactive attribute hooks (null/false removes): a selected row's
+	 *  `data-state`/`aria-selected`, a cell's `data-label`, a header's `scope`. */
+	attrs?: {
+		tr?: (item: T) => Record<string, string | number | boolean | null | undefined>;
+		td?: (column: Column<T>, item: T) => Record<string, string | number | boolean | null | undefined>;
+		th?: (column: Column<T>) => Record<string, string | number | boolean | null | undefined>;
+	};
+	/** Render through an existing collection() or dataGrid (anything with
+	 *  `items()`, `sort` and `toggleSort`) instead of building a second one. It
+	 *  owns rows/sort/filter/page — those options and `filterFn` are ignored —
+	 *  and sorting uses its compare. Share it with a toolbar/pager so both agree. */
+	view?: Pick<Collection<T>, "items" | "sort" | "toggleSort"> & Partial<Collection<T>>;
 	sortField?: string;
 	sortDesc?: boolean;
 }
@@ -1349,8 +1364,14 @@ import { … } from "@nemanjan00/qrp/spark"
 ```
 
 A charting *primitive*: data in, a reactive `el()` `<svg>` out (line / area /
-bar). No tooltips/legends/interaction — the sparkline/mini-chart 80%. Pass
-`() => series` for a live chart. Composes `scale`; enabled by SVG-aware `el`.
+bar). No tooltips/legends — the sparkline/mini-chart 80% — but `project()`
+returns the screen points the marks are drawn from, for your own hit-testing.
+Pass `() => series` for a live chart. Composes `scale`; enabled by SVG-aware `el`.
+
+**Several series, one chart:** give every spark the same `xDomain`/`yDomain`
+(a shared [min, max] or thunk) and layer the `<svg>`s; `stack` puts a series on
+a baseline (stacked areas/bars) and `group: [i, n]` places grouped bars side by
+side. `responsive: true` stretches to the container without distorting strokes.
 
 **Colour & theming:** the mark uses `stroke` (default `"currentColor"`), so it
 inherits the surrounding text colour and works in any theme — set `color` on a
@@ -1376,7 +1397,33 @@ spark(source: (() => readonly any[]) | readonly any[], opts?: SparkOptions): SVG
 
 Data → a reactive `<svg>` mini-chart. Pass `() => data` to make it live.
 
+### `project`
+
+```ts
+project<T = any>(source: (() => readonly T[]) | readonly T[], opts?: SparkOptions): SparkPoint<T>[]
+```
+
+Where each datum lands on screen under the same options a `spark()` uses — the
+points its marks are drawn from. Hit-test a pointer against them for a
+tooltip or cursor. Reads the source once, now.
+
 #### Supporting types
+
+```ts
+interface SparkPoint<T = any> {
+	x: number;
+	y: number;
+	/** The baseline under the point (area floor / bar start). */
+	y0: number;
+	index: number;
+	datum: T;
+	/** Bars only: the bar's width and left edge. */
+	width?: number;
+	left?: number;
+}
+```
+
+A datum's place on screen, from `project()`.
 
 ```ts
 interface SparkOptions {
@@ -1388,6 +1435,24 @@ interface SparkOptions {
 	x?: string | ((d: any, i: number) => number);
 	/** key or accessor for y (default: the number itself, or `d.y`). */
 	y?: string | ((d: any, i: number) => number);
+	/** Fixed x extent (or a thunk) — share it across sparks for a common axis. Line/area only. */
+	xDomain?: readonly [number, number] | (() => readonly [number, number]);
+	/** Fixed y extent (or a thunk) — share it across sparks for a common axis. */
+	yDomain?: readonly [number, number] | (() => readonly [number, number]);
+	/** y baseline: the area fills down to it, bars grow from it (bars default 0). */
+	base?: number;
+	/** Per-point baseline for stacking: an array aligned with the data, or (d, i) => number. */
+	stack?: readonly number[] | ((d: any, i: number) => number);
+	/** Line/area interpolation (default "linear"). */
+	curve?: "linear" | "monotone" | "natural" | "step";
+	/** Bars: `[slot, slots]` — this series is the slot-th of `slots` bars per band. */
+	group?: readonly [number, number];
+	/** Bars: fraction of each band left empty (default 0.2). */
+	gap?: number;
+	/** Bars: corner radius. */
+	radius?: number;
+	/** Fill the container (width/height 100%) with strokes that keep their width. */
+	responsive?: boolean;
 	stroke?: string;
 	fill?: string;
 	strokeWidth?: number;
@@ -1405,7 +1470,7 @@ interface SparkOptions {
 import { … } from "@nemanjan00/qrp/scale"
 ```
 
-Micro scales for charts — `linear`, `ordinal`, `quantize`, `ticks`, and a
+Micro scales for charts — `linear`, `ordinal`, `quantize`, `ticks`, `nice`, and a
 colourblind-safe categorical `palette`. Pure, zero-dep; pairs with `spark`.
 
 ### `linear`
@@ -1439,6 +1504,15 @@ ticks(domain: readonly [number, number], count?: number): number[]
 ```
 
 Evenly spaced tick values across [d0,d1] (count+1 points, ends included).
+
+### `nice`
+
+```ts
+nice(domain: readonly [number, number], count?: number): { domain: [number, number]; step: number; ticks: number[] }
+```
+
+Round a domain out to whole "nice" steps (1, 2, 2.5 or 5 × 10^n) so ticks land
+on round numbers. `nice([3, 97], 5)` → `{ domain: [0, 100], step: 20, ticks: [0, 20, …, 100] }`.
 
 ### `palette`
 
@@ -1603,7 +1677,14 @@ import { … } from "@nemanjan00/qrp/toasts"
 
 Notifications driven by the global bus — any code raises one without importing
 the UI. `notify.success|error|info|warning(content)` where content is any
-renderable. Mount the singleton once: `mount(document.body, toasts.component)`.
+renderable; `bus.emit("toast", { variant, content, … })` for any other variant.
+Mount the singleton once: `mount(document.body, toasts.component)`.
+
+`push` returns the toast id; `update(id, patch)`, `pause`/`resume` and
+`dismiss(id)` act on it, `meta.duration` sets a per-toast timeout, extra meta
+fields (description, action, …) stay on the item, and `exitMs` keeps a
+dismissed toast (`removed: true`) around for an exit animation — enough for a
+custom renderer to be a plain view over `store.items`.
 
 ### `createToasts`
 
@@ -1632,13 +1713,37 @@ Fire-and-forget notifications through the global bus. Content is renderable.
 #### Supporting types
 
 ```ts
+interface ToastItem {
+	id: ToastId;
+	variant: string;
+	title: string;
+	content: Renderable;
+	/** true while a dismissed toast plays its exit (see `exitMs`). */
+	removed: boolean;
+	[key: string]: any;
+}
+```
+
+A toast in `store.items`. Reactive: `update()` changes show up in renderers.
+
+```ts
 type Variant = "success" | "error" | "info" | "warning";
 ```
 
 ```ts
 interface ToastMeta {
 	title?: string;
+	/** Reuse this id: a live toast with it is updated instead of a new one added. */
+	id?: ToastId;
+	/** Per-toast auto-dismiss delay in ms (0 or Infinity = sticky). Default: the controller's timeout. */
+	duration?: number;
+	/** Any other field (description, action, icon, …) is kept on the item. */
+	[key: string]: any;
 }
+```
+
+```ts
+type ToastId = number | string;
 ```
 
 ```ts
@@ -1648,6 +1753,10 @@ interface ToastsOptions {
 	timeout?: number;
 	/** Identical-message suppression window in ms. */
 	dedupeWindow?: number;
+	/** Keep a dismissed toast (marked `removed`) this long before deleting it (default 0). */
+	exitMs?: number;
+	/** Extra bus event names to treat as variants (e.g. ["loading"]). */
+	variants?: string[];
 }
 ```
 
@@ -1655,13 +1764,20 @@ interface ToastsOptions {
 interface ToastsController {
 	/** Mount this once near the root: mount(document.body, toasts.component). */
 	component: (view: HTMLElement) => void;
-	store: { items: any[] };
-	push(variant: Variant | string, content: Renderable, meta?: ToastMeta): void;
-	dismiss(id: number): void;
-	success(content: Renderable, meta?: ToastMeta): void;
-	error(content: Renderable, meta?: ToastMeta): void;
-	info(content: Renderable, meta?: ToastMeta): void;
-	warning(content: Renderable, meta?: ToastMeta): void;
+	store: { items: ToastItem[] };
+	/** Add a toast (or update the live one with `meta.id`); returns its id. */
+	push(variant: Variant | string, content: Renderable, meta?: ToastMeta): ToastId;
+	/** Merge fields into a toast; a `duration` restarts its countdown. False if gone. */
+	update(id: ToastId, patch: Partial<ToastItem> & { duration?: number }): boolean;
+	dismiss(id: ToastId): void;
+	/** Stop the countdown, keeping the time left (one toast, or all). */
+	pause(id?: ToastId): void;
+	/** Restart a paused countdown (one toast, or all). */
+	resume(id?: ToastId): void;
+	success(content: Renderable, meta?: ToastMeta): ToastId;
+	error(content: Renderable, meta?: ToastMeta): ToastId;
+	info(content: Renderable, meta?: ToastMeta): ToastId;
+	warning(content: Renderable, meta?: ToastMeta): ToastId;
 }
 ```
 
@@ -1777,6 +1893,71 @@ interface QueryOptions {
 Options for {@link query}.
 
 
+## context
+
+```js
+import { … } from "@nemanjan00/qrp/context"
+```
+
+Values a subtree provides and its descendants read, found through the DOM —
+the qrp take on React context, for compound components (Tabs → its
+triggers, a sidebar provider → its parts). `createContext(fallback)` returns
+`{ provide, read, watch, find }`. Children are built before their parent, so `read`
+is reactive: inside an effect or reactive prop it re-runs when a provider
+appears (and once more, on a microtask, for a node still being inserted).
+Portaled content resolves through its owner (`setOwner`; `portal` records it).
+
+### `createContext`
+
+```ts
+createContext<T>(fallback?: T): Context<T>
+```
+
+Create a context; `fallback` is what read() returns with no provider above.
+
+### `setOwner`
+
+```ts
+setOwner<N extends Node>(node: N, owner: Node | null): N
+```
+
+Give `node` a logical parent for context lookup — for content that lives
+elsewhere in the DOM than where it belongs (an overlay portaled to <body>).
+`null` clears it. Returns `node`.
+
+### `ownerOf`
+
+```ts
+ownerOf(node: Node): Node | null
+```
+
+The logical owner set with setOwner, if any.
+
+#### Supporting types
+
+```ts
+interface Context<T> {
+	/** Provide `value` to `node`'s subtree; returns `node` for inline use. */
+	provide<N extends Node>(node: N, value: T): N;
+	/**
+	 * The nearest value provided above `node` (inclusive), or the fallback.
+	 * Reactive — read it inside an effect / reactive prop, not just once.
+	 */
+	read(node: Node): T;
+	/**
+	 * Run `fn(value, node)` in an effect now and whenever the context changes for
+	 * `node`; returns `node`. Use this for reads that bind to the element itself
+	 * (a reactive prop can't reference the element `el()` is still building).
+	 */
+	watch<N extends Node>(node: N, fn: (value: T, node: N) => void): N;
+	/** Untracked lookup: the value, whether it was found, and the providing node. */
+	find(node: Node): { found: boolean; value: T; provider: Node | null };
+}
+```
+
+A context created by createContext().
+
+
 ## behaviors
 
 ```js
@@ -1800,11 +1981,12 @@ stay returned and are idempotent, so calling one manually is still fine.
 ### `portal`
 
 ```ts
-portal(node: Node, target?: Node): () => void
+portal(node: Node, target?: Node, options?: PortalOptions): () => void
 ```
 
 Move `node` into `target` (default document.body); returns an idempotent
-dispose(). Also auto-registers teardown with the current scope.
+dispose(). Also auto-registers teardown with the current scope. Contexts keep
+resolving through where the node came from (or `options.owner`).
 
 ### `dismissable`
 
@@ -1885,6 +2067,16 @@ busyWhile(): BusyWhile
 Track in-flight promises as reactive busy state (spinners/overlays).
 
 #### Supporting types
+
+```ts
+interface PortalOptions {
+	/**
+	 * The node contexts should resolve through (see `context`). Defaults to the
+	 * node's parent before the move; pass the trigger for detached content.
+	 */
+	owner?: Node;
+}
+```
 
 ```ts
 interface DismissableOptions {

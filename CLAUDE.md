@@ -141,6 +141,14 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
   `tablePager(view, { classes: { nav, button, active, gap } })`.
 - `qrp.css` — optional minimal baseline (design tokens + semantic classes);
   link it yourself, qrp never injects it. Styling guide: `docs/STYLING.md`.
+- `context/index.js` — `createContext(fallback)` → `{ provide, read, watch, find }`:
+  values a subtree provides and descendants read by walking DOM ancestors (plus
+  logical owners from `setOwner`/`portal`, so portaled overlays resolve through
+  their trigger). Children are built before their parent, so reads are
+  REACTIVE: `provide()` re-runs readers, and a reader whose node is still
+  detached gets exactly one microtask retry (a never-attached node can't loop).
+  A reactive prop can't read its own element (`el()` runs it before the
+  `const node =` assignment) — that's what `watch(node, fn)` is for.
 - `proto/index.js` — prototype-level enhancement helpers.
 - Optional helpers (all separate opt-in modules, zero-dep, pay-for-what-you-use):
   - `format/index.js` — Intl-backed pure formatters (`num`/`compact`/`pct`/
@@ -187,7 +195,7 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
   asked; ~doubles the tarball, zero runtime cost). The npm package ships `dist/` (minified) + the hand-written
   `.d.ts` — **not** the raw source `.js` — plus `docs/*.md` + `CHANGELOG.md` (so
   the reference travels with the package: a coding agent reads the API straight
-  out of `node_modules`). Core is **~5.0 KB min+gzip**, whole library ~24.9 KB.
+  out of `node_modules`). Core is **~5.0 KB min+gzip**, whole library ~27.4 KB.
   `dist/` is gitignored (rebuilt on pack/publish). The consumer still runs zero
   build. (No code-splitting: the opaque `chunk-*.js` files it produced made
   self-hosting on a plain static server confusing — the user rejected chunking.)
