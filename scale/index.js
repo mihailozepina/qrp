@@ -60,6 +60,28 @@ export const ticks = (domain, count = 5) => {
 };
 
 /**
+ * Round a domain out to whole "nice" steps (1, 2, 2.5 or 5 × 10^n) so axis ticks
+ * land on round numbers: `nice([3, 97], 5)` → `{ domain: [0, 100], step: 20,
+ * ticks: [0, 20, 40, 60, 80, 100] }`. Include zero yourself if the chart needs it
+ * (`nice([Math.min(0, lo), hi])`).
+ */
+export const nice = (domain, count = 5) => {
+	const [lo, hi] = domain;
+	const span = hi - lo || Math.abs(lo) || 1;
+	const raw = span / Math.max(1, count);
+	const power = 10 ** Math.floor(Math.log10(raw));
+	const step = [1, 2, 2.5, 5, 10].find((unit) => raw / power <= unit) * power;
+	// Round to the step's precision so 0.2 × 3 reads 0.6, not 0.6000000000000001.
+	const digits = Math.max(0, 1 - Math.floor(Math.log10(step)));
+	const clean = (value) => Number(value.toFixed(digits));
+	const start = clean(Math.floor(lo / step) * step);
+	const end = clean(Math.max(Math.ceil(hi / step) * step, start + step));
+	const steps = Math.round((end - start) / step);
+
+	return { domain: [start, end], step: clean(step), ticks: Array.from({ length: steps + 1 }, (_, i) => clean(start + i * step)) };
+};
+
+/**
  * Okabe–Ito colourblind-safe categorical palette (8 hues). Feed it to `ordinal`
  * so a chart's series get stable, accessible colours instead of random hex.
  */

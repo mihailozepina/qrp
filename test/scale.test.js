@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { linear, ordinal, quantize, ticks, palette } from "../scale/index.js";
+import { linear, ordinal, quantize, ticks, palette, nice } from "../scale/index.js";
 
 test("linear maps + clamps", () => {
 	assert.equal(linear([0, 100], [0, 300])(50), 150);
@@ -26,4 +26,11 @@ test("quantize buckets", () => {
 test("ticks + palette", () => {
 	assert.deepEqual(ticks([0, 10], 5), [0, 2, 4, 6, 8, 10]);
 	assert.equal(palette.length, 8);
+});
+
+test("nice rounds a domain out to whole steps with clean ticks", () => {
+	assert.deepEqual(nice([3, 97], 5), { domain: [0, 100], step: 20, ticks: [0, 20, 40, 60, 80, 100] });
+	assert.deepEqual(nice([0.13, 0.87]).ticks, [0, 0.2, 0.4, 0.6, 0.8, 1]);
+	assert.deepEqual(nice([-12, 48], 4).domain, [-20, 60]);
+	assert.deepEqual(nice([5, 5]).domain.length, 2, "a degenerate domain still gets a span");
 });

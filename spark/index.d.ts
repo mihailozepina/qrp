@@ -1,8 +1,14 @@
 /**
  * @module spark
  * A charting *primitive*: data in, a reactive `el()` `<svg>` out (line / area /
- * bar). No tooltips/legends/interaction — the sparkline/mini-chart 80%. Pass
- * `() => series` for a live chart. Composes `scale`; enabled by SVG-aware `el`.
+ * bar). No tooltips/legends — the sparkline/mini-chart 80% — but `project()`
+ * returns the screen points the marks are drawn from, for your own hit-testing.
+ * Pass `() => series` for a live chart. Composes `scale`; enabled by SVG-aware `el`.
+ *
+ * **Several series, one chart:** give every spark the same `xDomain`/`yDomain`
+ * (a shared [min, max] or thunk) and layer the `<svg>`s; `stack` puts a series on
+ * a baseline (stacked areas/bars) and `group: [i, n]` places grouped bars side by
+ * side. `responsive: true` stretches to the container without distorting strokes.
  *
  * **Colour & theming:** the mark uses `stroke` (default `"currentColor"`), so it
  * inherits the surrounding text colour and works in any theme — set `color` on a
@@ -45,6 +51,24 @@ export interface SparkOptions {
 	x?: string | ((d: any, i: number) => number);
 	/** key or accessor for y (default: the number itself, or `d.y`). */
 	y?: string | ((d: any, i: number) => number);
+	/** Fixed x extent (or a thunk) — share it across sparks for a common axis. Line/area only. */
+	xDomain?: readonly [number, number] | (() => readonly [number, number]);
+	/** Fixed y extent (or a thunk) — share it across sparks for a common axis. */
+	yDomain?: readonly [number, number] | (() => readonly [number, number]);
+	/** y baseline: the area fills down to it, bars grow from it (bars default 0). */
+	base?: number;
+	/** Per-point baseline for stacking: an array aligned with the data, or (d, i) => number. */
+	stack?: readonly number[] | ((d: any, i: number) => number);
+	/** Line/area interpolation (default "linear"). */
+	curve?: "linear" | "monotone" | "natural" | "step";
+	/** Bars: `[slot, slots]` — this series is the slot-th of `slots` bars per band. */
+	group?: readonly [number, number];
+	/** Bars: fraction of each band left empty (default 0.2). */
+	gap?: number;
+	/** Bars: corner radius. */
+	radius?: number;
+	/** Fill the container (width/height 100%) with strokes that keep their width. */
+	responsive?: boolean;
 	stroke?: string;
 	fill?: string;
 	strokeWidth?: number;
@@ -54,5 +78,25 @@ export interface SparkOptions {
 	class?: string;
 }
 
+/** A datum's place on screen, from `project()`. */
+export interface SparkPoint<T = any> {
+	x: number;
+	y: number;
+	/** The baseline under the point (area floor / bar start). */
+	y0: number;
+	index: number;
+	datum: T;
+	/** Bars only: the bar's width and left edge. */
+	width?: number;
+	left?: number;
+}
+
 /** Data → a reactive `<svg>` mini-chart. Pass `() => data` to make it live. */
 export function spark(source: (() => readonly any[]) | readonly any[], opts?: SparkOptions): SVGElement;
+
+/**
+ * Where each datum lands on screen under the same options a `spark()` uses — the
+ * points its marks are drawn from. Hit-test a pointer against them for a
+ * tooltip or cursor. Reads the source once, now.
+ */
+export function project<T = any>(source: (() => readonly T[]) | readonly T[], opts?: SparkOptions): SparkPoint<T>[];
