@@ -214,3 +214,23 @@ test("form dotted path creates intermediate objects + seeds nested default", () 
 	form({ fields: { "a.b.c": { type: "text", default: "x" } }, settings });
 	assert.equal(settings.a.b.c, "x");
 });
+
+test("field() links its label to a button-based custom control", () => {
+	registerInput("toggle-btn", (settings, key) => {
+		const button = document.createElement("button");
+
+		button.type = "button";
+		button.setAttribute("role", "switch");
+		button.addEventListener("click", () => { settings[key] = !settings[key]; });
+
+		return button;
+	});
+
+	const settings = state({ ON: false });
+	const row = field(settings, "ON", { name: "Enabled", type: "toggle-btn" });
+	const label = row.querySelector("label");
+	const button = row.querySelector("button");
+
+	assert.ok(button.id, "button control gets an id");
+	assert.equal(label.getAttribute("for"), button.id);
+});

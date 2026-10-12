@@ -189,9 +189,11 @@ const resolveInput = (field) => {
  * @param {object} [spec] { name, description, type, input, ...attrs }
  * @returns {Element} label + input (+ description)
  */
-// labelable native controls — a <label for> only associates with these, not a
-// wrapper like the radio-group div (which carries its own per-option labels).
-const LABELABLE = new Set(["INPUT", "SELECT", "TEXTAREA"]);
+// labelable elements (HTML spec) — a <label for> only associates with these, not
+// a wrapper like the radio-group div (which carries its own per-option labels).
+// BUTTON matters for button-based custom controls (a styled checkbox/switch
+// registered via registerInput): their label must link and click-to-focus too.
+const LABELABLE = new Set(["INPUT", "SELECT", "TEXTAREA", "BUTTON", "METER", "OUTPUT", "PROGRESS"]);
 let fieldSeq = 0;
 
 /**
