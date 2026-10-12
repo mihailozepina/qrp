@@ -3,11 +3,11 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { effect, el, scoped } from "../qrp/index.js";
+import { effect, el, scoped, state } from "../qrp/index.js";
 import { portal } from "../behaviors/portal.js";
 import { dismissable } from "../behaviors/dismissable.js";
 import { trapFocus } from "../behaviors/trap-focus.js";
-import { anchored } from "../behaviors/anchored.js";
+import { anchored, pointAt } from "../behaviors/anchored.js";
 import { disclosure } from "../behaviors/disclosure.js";
 import { busyWhile } from "../behaviors/busy-while.js";
 
@@ -65,6 +65,96 @@ test("dismissable fires on outside pointerdown but not inside", async () => {
 	dispose();
 });
 
+test("dismissable: Escape closes only the topmost layer", () => {
+	const outer = el("div", {});
+	const inner = el("div", {});
+	const closed = [];
+
+	document.body.append(outer, inner);
+
+	const undoOuter = dismissable(outer, () => closed.push("outer"));
+	const undoInner = dismissable(inner, () => { closed.push("inner"); undoInner(); });
+
+	document.dispatchEvent(key("Escape"));
+	assert.deepEqual(closed, ["inner"]);
+
+	document.dispatchEvent(key("Escape"));
+	assert.deepEqual(closed, ["inner", "outer"]);
+
+	undoOuter();
+	outer.remove();
+	inner.remove();
+});
+
+test("dismissable: a click inside a nested (later) layer dismisses neither", async () => {
+	const dialog = el("div", {}, el("p", {}, "dialog body"));
+	const popover = el("div", {}, el("button", {}, "item"));   // portaled elsewhere
+	const closed = [];
+
+	document.body.append(dialog, popover);
+
+	const undoDialog = dismissable(dialog, () => closed.push("dialog"));
+	const undoPopover = dismissable(popover, () => { closed.push("popover"); undoPopover(); });
+
+	await tick();
+
+	popover.querySelector("button").dispatchEvent(new Event("pointerdown", { bubbles: true }));
+	assert.deepEqual(closed, [], "inside the top layer: nothing closes");
+
+	dialog.querySelector("p").dispatchEvent(new Event("pointerdown", { bubbles: true }));
+	assert.deepEqual(closed, ["popover"], "inside the dialog: only the popover above it closes");
+
+	document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+	assert.deepEqual(closed, ["popover", "dialog"]);
+
+	undoDialog();
+	dialog.remove();
+	popover.remove();
+});
+
+test("dismissable: `inside` nodes and `modal` layers", async () => {
+	const trigger = el("button", {}, "open");
+	const menu = el("div", {});
+	const below = el("div", {});
+	const modal = el("div", {});
+	const closed = [];
+
+	document.body.append(trigger, menu, below, modal);
+
+	const undoMenu = dismissable(menu, () => closed.push("menu"), { inside: [trigger] });
+
+	await tick();
+	trigger.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+	assert.deepEqual(closed, [], "the trigger counts as inside");
+	undoMenu();
+
+	const undoBelow = dismissable(below, () => closed.push("below"));
+	const undoModal = dismissable(modal, () => closed.push("modal"), { modal: true });
+
+	await tick();
+	document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+	assert.deepEqual(closed, ["modal"], "the walk stops at a modal layer");
+
+	undoBelow();
+	undoModal();
+	[trigger, menu, below, modal].forEach((node) => node.remove());
+});
+
+test("dismissable: the opening click (same tick) is not an outside click", () => {
+	const node = el("div", {});
+	let dismissed = 0;
+
+	document.body.append(node);
+
+	const undo = dismissable(node, () => { dismissed++; });
+
+	document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+	assert.equal(dismissed, 0);
+
+	undo();
+	node.remove();
+});
+
 // --- trapFocus --------------------------------------------------------------
 
 test("trapFocus focuses the first focusable and restores on dispose", () => {
@@ -110,6 +200,88 @@ test("anchored positions the floating element (fixed) and dispose is a fn", () =
 	dispose();
 });
 
+// A stand-in rect: happy-dom has no layout.
+const rect = (left, top, width, height) => ({
+	left, top, width, height, right: left + width, bottom: top + height, x: left, y: top
+});
+
+const placed = (triggerRect, floatingSize, options) => {
+	const trigger = { getBoundingClientRect: () => triggerRect };
+	const floating = el("div", {});
+
+	floating.getBoundingClientRect = () => rect(0, 0, floatingSize[0], floatingSize[1]);
+	document.body.append(floating);
+
+	const dispose = anchored(trigger, floating, options);
+	const result = {
+		top: parseFloat(floating.style.top),
+		left: parseFloat(floating.style.left),
+		side: floating.dataset.side,
+		align: floating.dataset.align,
+		origin: floating.style.getPropertyValue("--qrp-transform-origin"),
+		anchorWidth: floating.style.getPropertyValue("--qrp-anchor-width")
+	};
+
+	dispose();
+	floating.remove();
+
+	return result;
+};
+
+test("anchored defaults: below the trigger, left edges aligned, 4px gap", () => {
+	const at = placed(rect(100, 100, 80, 30), [120, 60]);
+
+	assert.deepEqual([at.top, at.left, at.side, at.align], [134, 100, "bottom", "start"]);
+	assert.equal(at.anchorWidth, "80px");
+	assert.equal(at.origin, "left top");
+});
+
+test("anchored: side + align + offsets", () => {
+	const right = placed(rect(100, 100, 80, 30), [120, 60], { side: "right", align: "center", sideOffset: 8 });
+
+	assert.deepEqual([right.left, right.top, right.side], [188, 85, "right"]);
+
+	const top = placed(rect(100, 300, 80, 30), [120, 60], { side: "top", align: "end", alignOffset: 2 });
+
+	assert.deepEqual([top.top, top.left, top.side, top.align], [236, 58, "top", "end"]);
+	assert.equal(top.origin, "right bottom");
+});
+
+test("anchored: flips when the preferred side doesn't fit, shifts on the cross axis", () => {
+	const flipped = placed(rect(100, window.innerHeight - 40, 80, 30), [120, 100]);
+
+	assert.equal(flipped.side, "top");
+	assert.equal(flipped.top, window.innerHeight - 40 - 100 - 4);
+
+	const shifted = placed(rect(window.innerWidth - 50, 100, 40, 30), [120, 60]);
+
+	assert.equal(shifted.left, window.innerWidth - 120, "kept on screen");
+
+	const pinned = placed(rect(100, window.innerHeight - 40, 80, 30), [120, 100], { avoidCollisions: false });
+
+	assert.equal(pinned.side, "bottom");
+});
+
+test("anchored: `placement` and `gap` still work (older names)", () => {
+	const at = placed(rect(100, 300, 80, 30), [120, 60], { placement: "top", gap: 10 });
+
+	assert.deepEqual([at.top, at.side], [230, "top"]);
+});
+
+test("anchored: pointAt anchors at a viewport point", () => {
+	const floating = el("div", {});
+
+	floating.getBoundingClientRect = () => rect(0, 0, 100, 50);
+	document.body.append(floating);
+
+	const dispose = anchored(pointAt(200, 150), floating, { sideOffset: 0 });
+
+	assert.equal(floating.style.top, "150px");
+	assert.equal(floating.style.left, "200px");
+	dispose();
+	floating.remove();
+});
+
 // --- disclosure -------------------------------------------------------------
 
 test("disclosure toggles reactive state and wires aria", () => {
@@ -130,6 +302,60 @@ test("disclosure toggles reactive state and wires aria", () => {
 	assert.equal(seen, true);
 	assert.equal(trigger.getAttribute("aria-expanded"), "true");
 	assert.equal(panel.hidden, false);
+});
+
+test("disclosure connect: data-state, aria-controls, hide: false, disabled", () => {
+	const d = disclosure(false);
+	const trigger = el("button", {});
+	const panel = el("div", {});
+	const locked = state({ on: true });
+
+	d.connect(trigger, panel, { hide: false, disabled: () => locked.on });
+
+	assert.ok(panel.id, "panel gets an id");
+	assert.equal(trigger.getAttribute("aria-controls"), panel.id);
+	assert.equal(panel.dataset.state, "closed");
+	assert.equal(panel.hidden, false, "hide: false leaves visibility to CSS");
+
+	trigger.click();
+	assert.equal(d.state.open, false, "disabled ignores clicks");
+
+	locked.on = false;
+	trigger.click();
+	assert.equal(d.state.open, true);
+	assert.equal(trigger.dataset.state, "open");
+	assert.equal(panel.dataset.state, "open");
+});
+
+test("disclosure bound to [state, key] is two-way and reports onChange", () => {
+	const ui = state({ filters: false });
+	const changes = [];
+	const d = disclosure([ui, "filters"], { onChange: (open) => changes.push(open) });
+
+	let seen;
+	effect(() => { seen = d.state.open; });
+
+	d.open();
+	assert.equal(ui.filters, true);
+	assert.equal(seen, true);
+
+	ui.filters = false;
+	assert.equal(d.state.open, false);
+	assert.equal(seen, false);
+	assert.deepEqual(changes, [true]);
+});
+
+test("disclosure driven by a thunk only reports requests", () => {
+	const ui = state({ open: false });
+	const requests = [];
+	const d = disclosure(() => ui.open, { onChange: (open) => requests.push(open) });
+
+	d.toggle();
+	assert.equal(ui.open, false, "the owner decides");
+	assert.deepEqual(requests, [true]);
+
+	ui.open = true;
+	assert.equal(d.state.open, true);
 });
 
 // --- busyWhile --------------------------------------------------------------

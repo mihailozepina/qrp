@@ -854,7 +854,8 @@ row reuse, per-column config. A column is `{ key, label?, accessor?, formatter?,
 render?, header?, sortable?, sortByFormatted?, thClass?, tdClass? }`. `fields`
 may be a thunk for reactive columns; `expandable` adds detail rows. The
 returned table has `.view` (the collection, for `tablePager`/`tableSummary`)
-plus `.expanded`/`.toggleRow`.
+plus `.expanded`/`.toggleRow`. Every part carries a stable `qrp-*` class; style
+it through a design system with `classes` (per part) and `sortIndicator`.
 
 ### `table`
 
@@ -867,7 +868,7 @@ Build a declarative, sortable, keyed, paginated data table.
 ### `tablePager`
 
 ```ts
-tablePager(view: Collection<any>, options?: { window?: number }): HTMLElement
+tablePager(view: Collection<any>, options?: { window?: number; /** Extra classes: the <nav>, every button, the current page's button, the "…" gap. */ classes?: { nav?: string; button?: string; active?: string; gap?: string }; }): HTMLElement
 ```
 
 A stock prev / windowed-pages / next control for a table().view (or any collection).
@@ -917,6 +918,21 @@ interface Column<T> {
 A column descriptor for table().
 
 ```ts
+interface TableClasses<T> {
+	thead?: string;
+	headRow?: string;
+	th?: string;
+	tbody?: string;
+	tr?: string | ((item: T) => string);
+	td?: string;
+	expandRow?: string;
+	expandCell?: string;
+}
+```
+
+Extra classes for each part of a table().
+
+```ts
 type TableElement<T> = HTMLTableElement & {
 	view: Collection<T>;
 	/** Reactive per-key open flags for expandable rows (`expanded[key]`). */
@@ -949,6 +965,12 @@ interface TableOptions<T> {
 	rowClass?: (item: T) => string;
 	/** Extra class(es) for the <table>. */
 	class?: string;
+	/** Extra classes per part, merged with the qrp-* classes and the per-column
+	 *  thClass/tdClass and rowClass. `tr` may be a function of the row's item. */
+	classes?: TableClasses<T>;
+	/** Custom sort indicator for sortable headers (replaces ▲/▼). `dir` is 1
+	 *  (ascending), -1 (descending) or 0 (not the sort column). */
+	sortIndicator?: (dir: 1 | -1 | 0) => Renderable;
 	sortField?: string;
 	sortDesc?: boolean;
 }
@@ -1793,7 +1815,13 @@ dismissable(node: Node, onDismiss: (event: Event) => void, options?: Dismissable
 Call onDismiss on Escape or outside pointerdown; returns an idempotent
 dispose(). Also auto-registers teardown with the current scope.
 
-**Guarantee:** the outside-pointerdown listener attaches on the *next tick*,
+**Nesting-aware:** live dismissables form one stack (newest on top). Escape
+dismisses only the topmost layer listening for it; an outside pointerdown
+dismisses layers from the top down and stops at the layer it landed in — a
+click inside a popover opened from a dialog closes neither, a click in the
+dialog closes just the popover. A `modal` layer stops the walk.
+
+**Guarantee:** a layer only reacts to outside clicks from the *next tick* on,
 so the same interaction that opened the element (the click on a "…" menu, an
 "edit" button spawning an inline editor) never counts as an outside click and
 self-dismisses it. Rely on this — no `stopPropagation` needed at the opener.
@@ -1810,19 +1838,43 @@ Returns an idempotent dispose(); also auto-registers teardown with the scope.
 ### `anchored`
 
 ```ts
-anchored(trigger: Element, floating: HTMLElement, options?: AnchoredOptions): AnchoredDispose
+anchored(trigger: Element | AnchorReference, floating: HTMLElement, options?: AnchoredOptions): AnchoredDispose
 ```
 
 Position `floating` next to `trigger`; returns an idempotent dispose() (with
 .update()). Also auto-registers teardown with the current scope.
 
+Writes `data-side` / `data-align` (the side actually used after flipping) and
+the CSS variables `--qrp-transform-origin`, `--qrp-anchor-width`,
+`--qrp-anchor-height`, `--qrp-available-width`, `--qrp-available-height`.
+
+```js
+anchored(button, menu, { side: "right", align: "start", sideOffset: 8 });
+anchored(pointAt(event.clientX, event.clientY), contextMenu);
+```
+
+### `pointAt`
+
+```ts
+pointAt(x: number, y: number): AnchorReference
+```
+
+A virtual reference at a viewport point (anchor a context menu at the cursor).
+
 ### `disclosure`
 
 ```ts
-disclosure(initial?: boolean): Disclosure
+disclosure(initial?: boolean | [Record<string, any>, string] | (() => boolean), options?: DisclosureOptions): Disclosure
 ```
 
-Reactive open/close state with optional ARIA wiring.
+Reactive open/close state with optional ARIA wiring. `initial` is a boolean
+(uncontrolled), a `[state, "key"]` tuple (two-way bound), or a thunk (driven:
+open/close/toggle only report through `onChange`).
+
+```js
+const d = disclosure([ui, "filtersOpen"]);   // bound to reactive state
+d.connect(button, panel, { hide: false });    // animate off data-state
+```
 
 ### `busyWhile`
 
@@ -1835,13 +1887,51 @@ Track in-flight promises as reactive busy state (spinners/overlays).
 #### Supporting types
 
 ```ts
-interface DismissableOptions { escape?: boolean; outside?: boolean; }
+interface DismissableOptions {
+	/** Listen for Escape (default true). */
+	escape?: boolean;
+	/** Listen for outside pointerdown (default true). */
+	outside?: boolean;
+	/** More nodes that count as inside — typically the trigger, so clicking it
+	 *  toggles instead of dismiss-then-reopen. */
+	inside?: Node[];
+	/** Outside clicks don't reach (dismiss) layers below this one. */
+	modal?: boolean;
+}
+```
+
+```ts
+interface AnchorReference { getBoundingClientRect(): DOMRect | { top: number; bottom: number; left: number; right: number; width: number; height: number }; }
+```
+
+Anything with a bounding rect — an Element or a virtual point.
+
+```ts
+type Side = "top" | "right" | "bottom" | "left";
+```
+
+```ts
+type Align = "start" | "center" | "end";
 ```
 
 ```ts
 interface AnchoredOptions {
-	placement?: "bottom" | "top";
+	/** Preferred side (default "bottom"); flips when it doesn't fit. */
+	side?: Side;
+	/** Alias of `side` (the older name). */
+	placement?: Side;
+	/** Cross-axis alignment (default "start" — left edges line up). */
+	align?: Align;
+	/** Gap from the trigger in px (default 4). */
+	sideOffset?: number;
+	/** Alias of `sideOffset` (the older name). */
 	gap?: number;
+	/** Cross-axis nudge in px (default 0). */
+	alignOffset?: number;
+	/** px kept clear of the viewport edge when flipping/shifting (default 0). */
+	collisionPadding?: number;
+	/** Flip to the opposite side and shift along the cross axis to stay on screen (default true). */
+	avoidCollisions?: boolean;
 	/** Size the floating element to the trigger's width (dropdown-spans-input). */
 	matchWidth?: boolean;
 }
@@ -1852,12 +1942,32 @@ interface AnchoredDispose { (): void; update(): void; }
 ```
 
 ```ts
+interface DisclosureConnectOptions {
+	/** Toggle `panel.hidden` (default true). Pass false to animate the panel
+	 *  yourself off its `data-state` ("open" | "closed"). */
+	hide?: boolean;
+	/** Ignore trigger clicks while true; a thunk is read on each click. */
+	disabled?: boolean | (() => boolean);
+}
+```
+
+```ts
+interface DisclosureOptions {
+	/** Called with the new (or, in driven mode, requested) open value on every change. */
+	onChange?: (open: boolean) => void;
+}
+```
+
+```ts
 interface Disclosure {
+	/** Reactive and writable in every mode. */
 	state: { open: boolean };
 	toggle(): void;
 	open(): void;
 	close(): void;
-	connect(trigger: Element, panel: HTMLElement): void;
+	/** Wire trigger + panel: aria-expanded, aria-controls (assigns panel.id if
+	 *  missing), data-state on both, `hidden` (unless `hide: false`), click toggles. */
+	connect(trigger: Element, panel: HTMLElement, options?: DisclosureConnectOptions): void;
 }
 ```
 

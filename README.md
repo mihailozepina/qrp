@@ -11,7 +11,7 @@ A data-first, declarative frontend framework for the browser — reactivity is a
 [![dependencies](https://img.shields.io/badge/dependencies-0-34d399?style=flat-square&labelColor=0a0d12)](#-tests--tooling)
 [![build step](https://img.shields.io/badge/build_step-optional-34d399?style=flat-square&labelColor=0a0d12)](#-what-is-qrp)
 [![core size](https://img.shields.io/badge/core-~5.0_KB_min%2Bgzip-ffb23e?style=flat-square&labelColor=0a0d12)](#-performance)
-[![tests](https://img.shields.io/badge/tests-263_passing-34d399?style=flat-square&labelColor=0a0d12)](#-tests--tooling)
+[![tests](https://img.shields.io/badge/tests-329_passing-34d399?style=flat-square&labelColor=0a0d12)](#-tests--tooling)
 [![types](https://img.shields.io/badge/TypeScript-.d.ts_included-ffb23e?style=flat-square&labelColor=0a0d12)](#-typescript)
 [![license](https://img.shields.io/npm/l/@nemanjan00/qrp?style=flat-square&labelColor=0a0d12&color=34d399)](LICENSE)
 
@@ -27,7 +27,7 @@ let your bundler (Vite, webpack, Rollup, esbuild) resolve subpaths and tree-shak
 Same library either way; the build is your choice, not qrp's. Reactivity is a
 `Proxy`, the DOM is real, and the published core is **~5.0 KB min+gzip** — the
 number that lines up next to Solid (~7 KB) or React (~45 KB). The whole library,
-every module, is **~23.6 KB min+gzip**.
+every module, is **~24.9 KB min+gzip**.
 
 > The npm package ships a minified build (esbuild) — a flat per-module mirror in
 > `dist/`, so a browser pulls the small file — still no build step on *your* end. The readable source,
@@ -58,7 +58,7 @@ data, the DOM follows.
 
 ## 🛰️ Small enough to run on a microcontroller
 
-Because the whole library is ~23.6 KB min+gzip, a useful qrp app doesn't need a
+Because the whole library is ~24.9 KB min+gzip, a useful qrp app doesn't need a
 server or a CDN — it fits **in flash on an ESP32**. Not a static form, either: a
 **live dashboard** — telemetry streaming into reactive bindings, an LED you drive,
 a config form that rewrites itself with `when()`, and a WiFi-scan modal built from
@@ -69,9 +69,9 @@ a config form that rewrites itself with `when()`, and a WiFi-scan modal built fr
 
 | what the browser loads | size |
 |---|---|
-| qrp core + behaviors + the app, minified | ~12.7 KB |
-| the whole self-contained HTML page | ~17.4 KB |
-| **gzipped — the total baked into flash** | **~7 KB** |
+| qrp core + behaviors + the app, minified | ~14.2 KB |
+| the whole self-contained HTML page | ~18.9 KB |
+| **gzipped — the total baked into flash** | **~7.7 KB** |
 
 `react-dom` alone is ~45 KB gzipped — **~6× this entire live dashboard**, before a
 line of your own UI. The chip serves the page from PROGMEM over its own WiFi AP:
@@ -606,7 +606,7 @@ test("rows render and react to a state write", () => {
 ```
 
 Writes are synchronous, so there's nothing to `await` — the assertion runs right
-after the state write. This is how qrp tests *itself* (263 tests, `node --test` +
+after the state write. This is how qrp tests *itself* (329 tests, `node --test` +
 happy-dom); your app tests the same way.
 
 ## 📖 API reference
@@ -618,7 +618,7 @@ Full reference — every export, signature, and a usage snippet per module — i
 
 ```sh
 npm install     # dev-only: happy-dom (tests), eslint, typescript, husky
-npm test        # node --test — 263 tests across every module
+npm test        # node --test — 329 tests across every module
 npm run lint    # eslint (eslint:recommended + house style)
 npm run typecheck  # tsc --noEmit over the .d.ts + a usage suite (strict)
 ```

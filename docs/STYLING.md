@@ -80,6 +80,28 @@ field(settings, "email", { name: "Email", type: "email", class: "form-control" }
 el("button", { class: "btn btn-primary" }, "Save");
 ```
 
+`table()` and `tablePager()` take a `classes` object for the parts you don't
+build yourself, so a utility-class design system reaches every element:
+
+```js
+table({
+  rows, fields,
+  class: "w-full caption-bottom text-sm",
+  classes: {
+    thead: "[&_tr]:border-b",
+    th: "h-10 px-2 text-left font-medium",
+    tr: "border-b hover:bg-muted/50",          // or (item) => string
+    td: "p-2 align-middle"
+  },
+  sortIndicator: (dir) => dir === 0 ? null : (dir === 1 ? upIcon() : downIcon())
+});
+tablePager(t.view, { classes: { nav: "flex gap-1", button: "btn", active: "btn-active" } });
+```
+
+The parts are `thead`, `headRow`, `th`, `tbody`, `tr`, `td`, `expandRow`,
+`expandCell` (table) and `nav`, `button`, `active`, `gap` (pager). They are
+added next to the stable `qrp-*` classes below, never instead of them.
+
 ## Emitted class reference
 
 Classes qrp puts on the elements it builds, so you can style them from any CSS.
@@ -92,7 +114,7 @@ Classes qrp puts on the elements it builds, so you can style them from any CSS.
 | `qrp-table` | the `<table>` |
 | `qrp-th` | header cells |
 | `qrp-sortable` | a sortable header cell |
-| `qrp-sort` | the sort-direction indicator |
+| `qrp-sort` | the sort-direction indicator (sortable `th` also gets `aria-sort`) |
 | `qrp-rowgroup` | a `<tbody>` row-group (expandable tables) |
 | `qrp-expand` | a detail `<tr>` (expandable rows) |
 | `qrp-pager` / `qrp-pager-btn` / `qrp-pager-gap` | pagination control |

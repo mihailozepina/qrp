@@ -207,6 +207,13 @@ const remove = portal(dialog);
 const close = () => { dispose(); remove(); };   // effects + DOM both gone
 ```
 
+**Dismissables stack.** Every live `dismissable` is a layer; Escape closes only
+the most recently opened one, and an outside click closes layers from the top
+until it reaches the one it landed in. That's what makes a popover inside a
+dialog work — but it also means two *unrelated* open dismissables no longer close
+together on one Escape: the newer goes first. Pass `inside: [trigger]` so a click
+on the opener toggles instead of dismiss-and-reopen.
+
 ## HTTP
 
 **A non-2xx response rejects** with `{ status, data, response }` (the body is

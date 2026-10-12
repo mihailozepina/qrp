@@ -3,7 +3,7 @@
 
 import { state, effect, derive, el, list, when, mount, router, navigate, onEffectError, currentRoute, batch } from "../qrp/index.js";
 import { html, ref } from "../html/index.js";
-import { table } from "../table/index.js";
+import { table, tablePager } from "../table/index.js";
 import { collection } from "../collection/index.js";
 import { dataGrid } from "../datagrid/index.js";
 import { form, registerInput, inputs, field, parseKV } from "../forms/index.js";
@@ -20,6 +20,8 @@ import { toCSV } from "../export/index.js";
 import { portal } from "../behaviors/portal.js";
 import { trapFocus } from "../behaviors/trap-focus.js";
 import { disclosure } from "../behaviors/disclosure.js";
+import { anchored, pointAt } from "../behaviors/anchored.js";
+import { dismissable } from "../behaviors/dismissable.js";
 import { busyWhile } from "../behaviors/busy-while.js";
 import { memoize } from "../utils/memoize.js";
 import { validate } from "../utils/validate.js";
@@ -165,3 +167,31 @@ const _csv: string = toCSV([{ a: 1 }], ["a", { key: "a", label: "A" }]);
 const _pl = poll(() => {}, 1000, { immediate: true, whenHidden: false });
 _pl.stop();
 void _fnum; void _fcompact; void _frel; void _rdata; void _rloading; void _lin; void _col; void _csv;
+
+// --- behaviors: disclosure modes, anchored placement, layered dismissable ----
+
+const ui = state({ filters: false });
+const bound = disclosure([ui, "filters"], { onChange: (open: boolean) => open });
+const driven = disclosure(() => ui.filters);
+const boundOpen: boolean = bound.state.open;
+driven.connect(el("button"), el("div"), { hide: false, disabled: () => ui.filters });
+
+const pop = el("div");
+const stopFollow = anchored(el("button"), pop, { side: "right", align: "center", sideOffset: 8, alignOffset: 2, collisionPadding: 8 });
+stopFollow.update();
+anchored(pointAt(10, 20), pop, { placement: "top", gap: 2, avoidCollisions: false });
+
+const undoLayer: () => void = dismissable(pop, (event: Event) => event, { inside: [el("button")], modal: true });
+undoLayer();
+
+// --- table: per-part classes, custom sort indicator, pager classes ----------
+
+interface Row { id: number; hot: boolean }
+const styled = table<Row>({
+	rows: () => [] as Row[],
+	fields: [{ key: "id", label: "Id", sortable: true }],
+	classes: { thead: "x", headRow: "x", th: "x", tbody: "x", tr: (row: Row) => (row.hot ? "hot" : ""), td: "x", expandRow: "x", expandCell: "x" },
+	sortIndicator: (dir: 1 | -1 | 0) => (dir === 0 ? null : el("i"))
+});
+tablePager(styled.view, { window: 2, classes: { nav: "n", button: "b", active: "a", gap: "g" } });
+void boundOpen;

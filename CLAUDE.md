@@ -116,6 +116,13 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
   teardown-returning ones (`portal`/`dismissable`/`trapFocus`/`anchored`) also
   `onDispose`-register their (idempotent) undo, so building them inside
   `scoped()`/`mount()` means `dispose()` alone cleans up effects AND behaviors.
+  `dismissable` keeps ONE module-level layer stack (Escape → topmost layer only;
+  an outside pointerdown dismisses from the top and stops at the layer it landed
+  in; `modal` stops the walk; `inside` adds e.g. the trigger) so nested floating
+  UI works. `anchored` does side/align/flip/shift and writes `data-side`/
+  `data-align` + `--qrp-*` CSS vars; `pointAt(x, y)` is a virtual reference.
+  `disclosure(initial, { onChange })` takes a bool, `[state, key]`, or a thunk;
+  `connect(trigger, panel, { hide, disabled })` sets data-state/aria-controls.
 - `collection/index.js` — reactive sort/filter/paginate combiner over a
   dataset; `.items` drives a keyed `list()`. The `form()`-analog for data.
   `.filtered()` exposes the full filtered set (unpaged/unsorted) for
@@ -128,7 +135,10 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
   (accessor/formatter/sortByFormatted/render/classes), sortable headers, keyed
   row reuse. Uses a per-key reactive HOLDER so cells reflect immutable row
   REPLACEMENT (refetch) without rebuilding the element. `key` option = the
-  `:key` equivalent (a function → stable id).
+  `:key` equivalent (a function → stable id). Design-system hooks: `classes`
+  (`thead/headRow/th/tbody/tr/td/expandRow/expandCell`, added next to the stable
+  `qrp-*` classes, `tr` may be item => string) and `sortIndicator(dir)`;
+  `tablePager(view, { classes: { nav, button, active, gap } })`.
 - `qrp.css` — optional minimal baseline (design tokens + semantic classes);
   link it yourself, qrp never injects it. Styling guide: `docs/STYLING.md`.
 - `proto/index.js` — prototype-level enhancement helpers.
@@ -177,7 +187,7 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
   asked; ~doubles the tarball, zero runtime cost). The npm package ships `dist/` (minified) + the hand-written
   `.d.ts` — **not** the raw source `.js` — plus `docs/*.md` + `CHANGELOG.md` (so
   the reference travels with the package: a coding agent reads the API straight
-  out of `node_modules`). Core is **~5.0 KB min+gzip**, whole library ~23.6 KB.
+  out of `node_modules`). Core is **~5.0 KB min+gzip**, whole library ~24.9 KB.
   `dist/` is gitignored (rebuilt on pack/publish). The consumer still runs zero
   build. (No code-splitting: the opaque `chunk-*.js` files it produced made
   self-hosting on a plain static server confusing — the user rejected chunking.)

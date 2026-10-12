@@ -6,7 +6,41 @@ find out by reading a diff. Newest first.
 
 ## Unreleased
 
-_(nothing yet)_
+- ⚠️ **BREAKING (behavior): `dismissable` is nesting-aware.** All live
+  dismissables now form one layer stack. Escape dismisses only the most recently
+  opened layer that listens for it, and an outside pointerdown dismisses layers
+  from the top down, stopping at the layer it landed in — so a click inside a
+  popover opened from a dialog closes neither, and a click in the dialog closes
+  just the popover. Before, every open dismissable reacted on its own: nested
+  floating UI closed its parent, and one Escape closed everything. If you had two
+  unrelated dismissables open at once and relied on one Escape closing both, the
+  newer one now closes first. New options: `inside` (extra nodes that count as
+  inside, e.g. the trigger) and `modal` (outside clicks don't reach the layers
+  below). Document listeners now exist only while a layer is open.
+- **`anchored`: sides, alignment, flip and shift.** New options `side`
+  (top/right/bottom/left; `placement` stays as an alias), `align`
+  (start/center/end, default start), `sideOffset` (alias of `gap`),
+  `alignOffset`, `collisionPadding`, `avoidCollisions` (flip to the opposite side
+  when it fits better — both directions now — and shift along the cross axis).
+  It writes `data-side`/`data-align` and the CSS variables
+  `--qrp-transform-origin`, `--qrp-anchor-width/-height`,
+  `--qrp-available-width/-height`, accepts a virtual reference, and re-places on
+  floating-element resize. New `pointAt(x, y)` for context menus. Default options
+  give the same positions as before.
+- **`disclosure`: controlled modes + richer `connect`.** `disclosure(initial,
+  { onChange })` — `initial` may be a boolean (as before), a `[state, "key"]`
+  tuple (two-way bound) or a thunk (driven: toggles only call `onChange`).
+  `connect(trigger, panel, { hide, disabled })` also sets `data-state` and
+  `aria-controls`; `hide: false` leaves visibility to your CSS so the panel can
+  animate.
+- **`table`: design-system class hooks.** `classes: { thead, headRow, th, tbody,
+  tr, td, expandRow, expandCell }` (`tr` may be `item => string`) adds classes
+  next to the stable `qrp-*` ones; `sortIndicator: (dir) => Renderable` replaces
+  the ▲/▼ text; sortable headers get `aria-sort`. `tablePager` takes `classes: {
+  nav, button, active, gap }`.
+- **`forms`: `field()` labels button-based controls.** A custom input type that
+  renders a `<button>` (a styled checkbox or switch) now gets its `<label for>`
+  linked like native inputs (also `meter`/`output`/`progress`).
 
 ## 0.10.0
 
