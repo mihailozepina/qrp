@@ -116,6 +116,10 @@ let effectSeq = 0;   // creation order, for flushPending
 // throws; the first error is rethrown at the end (all of them already went
 // through onEffectError).
 const flushPending = () => {
+	if(pendingRunners.size === 0) {
+		return;
+	}
+
 	const queue = [...pendingRunners].sort((a, b) => a.id - b.id);
 	const errors = [];
 
@@ -160,6 +164,27 @@ export const batch = (fn) => {
 
 const RAW = Symbol("qrp.raw");
 const proxyCache = new WeakMap();
+
+// Tracked by readers that depend on WHICH item sits at which index without
+// reading the indices themselves — list() iterates the RAW array for speed, so
+// it can't see per-index writes. Fired whenever an existing array slot is
+// overwritten (sort/reverse/splice/fill/copyWithin, `arr[i] = x`); appends and
+// removals already fire `length`.
+const ARRAY_SLOTS = Symbol("qrp.arraySlots");
+
+// In-place array mutators run as ONE update: the native method does many
+// element/length writes, and without batching every dependent would re-run on
+// the first of them and see a half-applied array (unshift's first write
+// duplicates an item). Wrapped once per method, shared by every reactive array.
+const ARRAY_MUTATORS = new Map(
+	["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin"].map((name) => {
+		const native = Array.prototype[name];
+
+		return [name, function(...args) {
+			return batch(() => native.apply(this, args));
+		}];
+	})
+);
 
 /**
  * Only plain objects and arrays are made reactive. DOM nodes, Map, Set, Date,
@@ -228,6 +253,12 @@ export const state = (obj) => {
 				return target;
 			}
 
+			const mutator = ARRAY_MUTATORS.get(key);
+
+			if(mutator && Array.isArray(target)) {
+				return mutator;
+			}
+
 			track(target, key);
 
 			const value = Reflect.get(target, key, receiver);
@@ -253,6 +284,10 @@ export const state = (obj) => {
 			// Object.is so writing NaN over NaN does not spuriously re-trigger.
 			if(!Object.is(old, next)) {
 				trigger(target, key);
+
+				if(wasArray && !isNew && key !== "length") {
+					trigger(target, ARRAY_SLOTS);
+				}
 			}
 
 			if(isNew) {
@@ -1045,10 +1080,12 @@ const setupList = (parent, marker) => {
 		const source = marker.source() || [];
 
 		// Reading source() tracks the KEY that holds the array (`store.rows`), so
-		// replacing the array re-runs this. Touching `.length` THROUGH the proxy
-		// additionally tracks in-place mutation (push/pop/splice/shift) — one
-		// extra tracked read, not the per-element tax of iterating the proxy.
+		// replacing the array re-runs this. Touching `.length` and ARRAY_SLOTS
+		// THROUGH the proxy additionally tracks in-place mutation (length for
+		// push/pop/truncation, slots for sort/reverse/splice/`arr[i] = x`) — two
+		// extra tracked reads, not the per-element tax of iterating the proxy.
 		void source.length;
+		void source[ARRAY_SLOTS];
 
 		const items = raw(source);
 

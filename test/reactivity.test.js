@@ -424,3 +424,53 @@ test("batch: an effect cycle in the flush still trips the runaway guard", () => 
 	assert.throws(() => batch(() => { s.go = true; }), /re-entered/);
 	off();
 });
+
+// --- in-place array mutators run as one update ---------------------------------
+
+test("an array mutator is one update: dependents run once and see only the final array", () => {
+	const s = state({ arr: [1, 2, 3] });
+
+	const lengths = [];
+	const snapshots = [];
+	effect(() => { lengths.push(s.arr.length); });
+	effect(() => { snapshots.push(s.arr.join(",")); });
+
+	s.arr.unshift(0);
+	assert.deepEqual(lengths, [3, 4]);
+	assert.deepEqual(snapshots, ["1,2,3", "0,1,2,3"]); // no half-shifted "1,1,2,3"
+
+	s.arr.shift();
+	assert.deepEqual(lengths, [3, 4, 3]);
+	assert.deepEqual(snapshots, ["1,2,3", "0,1,2,3", "1,2,3"]);
+
+	s.arr.reverse();
+	assert.deepEqual(lengths, [3, 4, 3], "a length-preserving mutator does not wake length-only readers");
+	assert.deepEqual(snapshots, ["1,2,3", "0,1,2,3", "1,2,3", "3,2,1"]);
+});
+
+test("array mutators keep native return values and are shared, not re-allocated per read", () => {
+	const s = state({ a: [{ id: 1 }], b: [] });
+
+	assert.equal(s.a.push, s.a.push);
+	assert.equal(s.a.push, s.b.push);
+	assert.equal(s.a.push({ id: 2 }), 2);
+	assert.equal(s.a.pop().id, 2);
+	assert.equal(s.a.sort(), s.a); // returns the (proxied) array itself
+	assert.deepEqual(s.b.splice(0, 0, 1, 2), []);
+});
+
+test("the loop guard still catches a runaway cascade through array mutators", () => {
+	const phases = [];
+	const off = onEffectError((_e, c) => phases.push(c.phase));
+	const s = state({ a: [], b: [] });
+
+	effect(() => { s.b.push(s.a.length); }, { loopLimit: 10, name: "a->b" });
+
+	assert.throws(
+		() => effect(() => { s.a.push(s.b.length); }, { loopLimit: 10, name: "b->a" }),
+		/infinite loop/,
+	);
+
+	assert.ok(phases.includes("loop"));
+	off();
+});
