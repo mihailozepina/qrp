@@ -30,7 +30,8 @@ export function emitter(): Emitter;
 /** The global event bus. */
 export const bus: Emitter;
 
-/** Turn an event source into reactive state holding the latest mapped detail. */
+/** Turn an event source into reactive state holding the latest mapped detail.
+ * The listener is removed when the enclosing scope/effect is disposed. */
 export function fromEvent<T = any, R = T>(
 	source: Emitter | EventTarget,
 	type: string,
@@ -42,7 +43,7 @@ export interface Channel {
 	on<T = any>(type: string, handler: Handler<T>): () => void;
 	off(type: string, handler: Handler): void;
 	once<T = any>(type: string): Promise<T>;
-	emit(type: string, detail?: any): unknown;
+	emit(type: string, detail?: any): Channel;
 	close(): void;
 }
 

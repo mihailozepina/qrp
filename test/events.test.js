@@ -3,8 +3,8 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { state, effect } from "../qrp/index.js";
-import { emitter, bus, fromEvent, broadcast } from "../events/index.js";
+import { state, effect, scope } from "../qrp/index.js";
+import { emitter, bus, fromEvent, broadcast, channel } from "../events/index.js";
 
 test("emitter on/emit delivers payloads", () => {
 	const e = emitter();
@@ -114,4 +114,106 @@ test("broadcast mirrors state changes onto an emitter", () => {
 
 	// initial effect run emits 0, then 1, then 2
 	assert.deepEqual(seen, [0, 1, 2]);
+});
+
+test("same handler subscribed twice: each unsubscribe removes its own listener", () => {
+	const e = emitter();
+
+	let count = 0;
+	const handler = () => { count++; };
+
+	const offA = e.on("x", handler);
+	const offB = e.on("x", handler);
+
+	e.emit("x");
+	assert.equal(count, 2);
+
+	offA();
+	e.emit("x");
+	assert.equal(count, 3); // offB's subscription still live
+
+	offB();
+	e.emit("x");
+	assert.equal(count, 3); // both gone
+});
+
+test("off(type, handler) removes every subscription of that handler on that type", () => {
+	const e = emitter();
+
+	let count = 0;
+	const handler = () => { count++; };
+
+	e.on("x", handler);
+	e.on("x", handler);
+	e.off("x", handler);
+
+	e.emit("x");
+	assert.equal(count, 0);
+});
+
+test("fromEvent unsubscribes from an emitter when its scope is disposed", () => {
+	const e = emitter();
+
+	let last;
+	const s = scope(() => { last = fromEvent(e, "tick"); });
+
+	e.emit("tick", 1);
+	assert.equal(last.value, 1);
+
+	s.dispose();
+	e.emit("tick", 2);
+	assert.equal(last.value, 1);
+});
+
+test("fromEvent unsubscribes from a raw EventTarget when its scope is disposed", () => {
+	const target = new EventTarget();
+
+	let last;
+	const s = scope(() => { last = fromEvent(target, "tick"); });
+
+	target.dispatchEvent(new CustomEvent("tick", { detail: 1 }));
+	assert.equal(last.value, 1);
+
+	s.dispose();
+	target.dispatchEvent(new CustomEvent("tick", { detail: 2 }));
+	assert.equal(last.value, 1);
+});
+
+test("channel fallback without BroadcastChannel still exposes close()", () => {
+	const saved = globalThis.BroadcastChannel;
+
+	delete globalThis.BroadcastChannel;
+
+	try {
+		const ch = channel("fallback");
+
+		let got;
+		ch.on("x", v => { got = v; });
+		ch.emit("x", 1);
+
+		assert.equal(got, 1);
+		assert.doesNotThrow(() => ch.close());
+	} finally {
+		globalThis.BroadcastChannel = saved;
+	}
+});
+
+test("channel emit returns the channel so chained emits still broadcast", () => {
+	const saved = globalThis.BroadcastChannel;
+	const posted = [];
+
+	globalThis.BroadcastChannel = function FakeChannel() {
+		this.postMessage = (message) => posted.push(message.type);
+		this.close = () => {};
+	};
+
+	try {
+		const ch = channel("chain");
+
+		ch.emit("a", 1).emit("b", 2);
+
+		assert.deepEqual(posted, ["a", "b"]);
+	} finally {
+		globalThis.BroadcastChannel = saved;
+	}
 });

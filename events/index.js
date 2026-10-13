@@ -16,7 +16,7 @@
  * request()/respond() pair for promise-based request→response over the bus.
  */
 
-import { state, effect } from "../qrp/index.js";
+import { state, effect, onDispose } from "../qrp/index.js";
 
 /**
  * Create an emitter backed by an EventTarget.
@@ -30,10 +30,26 @@ export const emitter = () => {
 	const target = new EventTarget();
 
 	// Map wrapped listeners back to originals so off() works with the same fn.
-	// handler -> Map(type -> wrapped). Keyed by BOTH so the same handler can be
-	// subscribed to several types (and to the same type more than once) without
-	// one registration clobbering another's wrapper.
+	// handler -> Map(type -> Set(wrapped)). Keyed by BOTH so the same handler
+	// can be subscribed to several types, and a Set per type so subscribing it
+	// to the same type twice keeps both wrappers — each on()'s unsubscribe
+	// removes exactly its own registration.
 	const wrappers = new WeakMap();
+
+	const removeWrapper = (type, handler, wrapped) => {
+		const byType = wrappers.get(handler);
+		const set = byType && byType.get(type);
+
+		if(!set || !set.delete(wrapped)) {
+			return;
+		}
+
+		target.removeEventListener(type, wrapped);
+
+		if(set.size === 0) {
+			byType.delete(type);
+		}
+	};
 
 	const self = {
 		target,
@@ -48,19 +64,23 @@ export const emitter = () => {
 				wrappers.set(handler, byType);
 			}
 
-			byType.set(type, wrapped);
+			if(!byType.has(type)) {
+				byType.set(type, new Set());
+			}
+
+			byType.get(type).add(wrapped);
 			target.addEventListener(type, wrapped);
 
-			return () => self.off(type, handler);
+			return () => removeWrapper(type, handler, wrapped);
 		},
 
+		/** Remove every subscription of `handler` to `type`. */
 		off: (type, handler) => {
 			const byType = wrappers.get(handler);
-			const wrapped = byType && byType.get(type);
+			const set = byType && byType.get(type);
 
-			if(wrapped) {
-				target.removeEventListener(type, wrapped);
-				byType.delete(type);
+			if(set) {
+				[...set].forEach(wrapped => removeWrapper(type, handler, wrapped));
 			}
 		},
 
@@ -126,7 +146,8 @@ export const bus = emitter();
 /**
  * Turn an event source into reactive state: { value } holding the latest
  * detail (via map). Works with the qrp bus, a raw EventTarget, or any object
- * exposing addEventListener.
+ * exposing addEventListener. The listener is removed when the enclosing
+ * scope (or effect) is disposed, so a component's fromEvent doesn't leak.
  *
  *   const last = fromEvent(bus, "user:login", u => u.name);
  *   effect(() => console.log("logged in:", last.value));
@@ -137,9 +158,20 @@ export const fromEvent = (source, type, map = (detail) => detail, initial = unde
 	const handler = (detail) => { store.value = map(detail); };
 
 	if(typeof source.on === "function") {
-		source.on(type, handler);
+		const off = source.on(type, handler);
+
+		onDispose(() => {
+			if(typeof off === "function") {
+				off();
+			} else if(typeof source.off === "function") {
+				source.off(type, handler);
+			}
+		});
 	} else {
-		source.addEventListener(type, (event) => handler(event.detail ?? event));
+		const listener = (event) => handler(event.detail ?? event);
+
+		source.addEventListener(type, listener);
+		onDispose(() => source.removeEventListener(type, listener));
 	}
 
 	return store;
@@ -148,11 +180,26 @@ export const fromEvent = (source, type, map = (detail) => detail, initial = unde
 /**
  * A cross-tab bus over BroadcastChannel: emit in one tab, receive in all.
  * Same on/emit surface as emitter(). Falls back to a local emitter where
- * BroadcastChannel is unavailable.
+ * BroadcastChannel is unavailable (with a no-op close()).
  */
 export const channel = (name) => {
 	if(typeof BroadcastChannel === "undefined") {
-		return emitter();
+		const fallback = emitter();
+
+		const local = {
+			on: fallback.on,
+			off: fallback.off,
+			once: fallback.once,
+
+			emit: (type, detail) => {
+				fallback.emit(type, detail);
+				return local;
+			},
+
+			close: () => {}
+		};
+
+		return local;
 	}
 
 	const bc = new BroadcastChannel(name);
@@ -164,7 +211,7 @@ export const channel = (name) => {
 		local.emit(type, detail);
 	};
 
-	return {
+	const self = {
 		on: local.on,
 		off: local.off,
 		once: local.once,
@@ -172,11 +219,13 @@ export const channel = (name) => {
 		emit: (type, detail) => {
 			bc.postMessage({ type, detail });
 			local.emit(type, detail); // also deliver to this tab
-			return local;
+			return self;
 		},
 
 		close: () => bc.close()
 	};
+
+	return self;
 };
 
 /**
