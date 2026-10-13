@@ -204,6 +204,10 @@ Run fn inside a fresh ownership scope; `dispose()` kills every effect created
 during it. `mount()` wraps this and also clears the DOM — reach for `scope()`
 directly only when you're managing effects **without** a DOM subtree to clear
 (e.g. a bundle of subscriptions you want to tear down together).
+Called inside a running effect, the scope still owns what its fn creates, and
+the effect owns the scope — it's disposed when that effect re-runs or is
+disposed. (Reads in fn are still tracked by the effect; wrap the call in
+`untracked()` if they shouldn't be.)
 
 ### `scoped`
 
@@ -238,13 +242,16 @@ prop is one of five kinds, and children follow their own rule:
 - **`on*: fn`** → an event listener (`addEventListener`):
   `el("button", { onclick: (e) => count.n++ })`.
 - **`bind: [state, key]`** → two-way binding for a form control (with
-  number/checkbox coercion): `el("input", { bind: [settings, "name"] })`.
+  number/checkbox coercion; applied after the other props, so `type` is set
+  first): `el("input", { bind: [settings, "name"] })`.
 - **`class` / `style`** → `class` takes a string or function; `style` takes a
-  string or an object (`{ color: "red" }`), each static or reactive.
+  string or an object (`{ color: "red", "--w": "10px" }` — custom properties
+  go through `setProperty`), each static or reactive.
 - Properties like **`value` / `checked`** are set as node *properties* (not
   attributes), so `checked: () => todo.done` works as expected. A prop whose
-  value is `false` or `null` **removes** the attribute (so `disabled: () => x`
-  toggles it), and `true` sets it empty.
+  value is `false`, `null` or `undefined` **removes** the attribute (so
+  `disabled: () => x` toggles it, `class: () => on && "active"` drops the
+  class), and `true` sets it empty. `value: null` empties an input.
 - **SVG is namespace-aware**: `el("svg", …)`, `el("path", …)`, etc. are created
   in the SVG namespace and their attributes (`d`, `viewBox`, `fill`, `class`)
   go through `setAttribute`. (`a`/`title`/`script`/`style` stay HTML — build an
@@ -299,12 +306,18 @@ array that's `() => store.rows`; when the data comes from a `collection`,
 `items()` is a method, so it's `() => view.items()`. Both are the same
 contract (a function returning an array); `collection.items` just happens to
 be callable rather than a property. Both **replacing** the array
-(`store.rows = next`) and **mutating it in place** (`push`/`splice`/`pop`)
-re-run the list.
+(`store.rows = next`) and **mutating it in place** (`push`/`pop`/`shift`/
+`unshift`/`splice`/`sort`/`reverse`/`fill`/`copyWithin`, or `rows[i] = item`)
+re-run the list — once per call, against the final array.
 
 `list()` is the reactive-array primitive: a spread of `.map()`
 (`el("ul", {}, ...store.rows.map(Row))`) renders **once** — the spread happens
 before `el()` is called, so there is no function for qrp to re-run.
+
+`render` ideally returns one element per row (the fast path). It may also
+return several nodes, an array, or a `when()`/renderable — that row's nodes
+(including whatever a nested `when()` swaps in later) move and are removed as
+a group, and `itemFor()` still resolves them.
 
 `keyFn` must return a **unique** key per item. Duplicate keys drop the row (two
 items can't share one element) and `console.error` by default — tune with
@@ -781,9 +794,11 @@ import { … } from "@nemanjan00/qrp/collection"
 
 Reactive sort / filter / paginate over a dataset. `collection(source, options)`
 returns `{ sort, filter, page, items(), filtered(), total(), pageCount(),
-toggleSort() }`;
+pageIndex(), toggleSort() }`;
 `items()` is reactive — feed it to `list()`. `options`:
-`{ sort?, page?, filter?, filterFn?, compare? }`.
+`{ sort?, page?, filter?, filterFn?, compare? }`. `compareValues(a, b, dir?)`
+is the default comparator (missing values last, numbers/Dates numeric, else
+natural-order strings) — reuse it inside a custom `compare`.
 
 ### `collection`
 
@@ -792,6 +807,16 @@ collection<T>(source: () => readonly T[], options?: CollectionOptions<T>): Colle
 ```
 
 Reactive sort / filter / paginate over a dataset.
+
+### `compareValues`
+
+```ts
+compareValues(a: unknown, b: unknown, dir?: number): number
+```
+
+The default sort comparator: null/undefined/NaN always last (either
+direction), numbers and Dates numerically, everything else by natural-order
+string comparison. `dir` is 1 (ascending, default) or -1.
 
 #### Supporting types
 
@@ -838,6 +863,12 @@ interface Collection<T> {
 	total(): number;
 	/** Number of pages at the current size. */
 	pageCount(): number;
+	/**
+	 * Reactive: the page `items()` shows — `page.index` clamped to
+	 * [0, pageCount-1]. After a filter shrinks the set, `page.index` may be out
+	 * of range; pagers and "Showing X–Y" summaries should read this instead.
+	 */
+	pageIndex(): number;
 	/** Toggle sort direction on the same key, else sort by it ascending. */
 	toggleSort(key: string): void;
 }
@@ -871,18 +902,20 @@ Build a declarative, sortable, keyed, paginated data table.
 ### `tablePager`
 
 ```ts
-tablePager(view: Collection<any>, options?: { window?: number; /** Extra classes: the <nav>, every button, the current page's button, the "…" gap. */ classes?: { nav?: string; button?: string; active?: string; gap?: string }; }): HTMLElement
+tablePager(view: Pick<Collection<any>, "page" | "pageCount">, options?: { window?: number; /** Extra classes: the <nav>, every button, the current page's button, the "…" gap. */ classes?: { nav?: string; button?: string; active?: string; gap?: string }; }): HTMLElement
 ```
 
-A stock prev / windowed-pages / next control for a table().view (or any collection).
+A stock prev / windowed-pages / next control for a table().view (or any
+ collection / dataGrid — it only reads `page` and `pageCount()`).
 
 ### `tableSummary`
 
 ```ts
-tableSummary(view: Collection<any>, options?: { label?: (from: number, to: number, total: number) => string; }): HTMLElement
+tableSummary(view: Pick<Collection<any>, "page" | "total">, options?: { label?: (from: number, to: number, total: number) => string; }): HTMLElement
 ```
 
-A reactive "Showing X–Y of Z" summary for a table().view (or any collection).
+A reactive "Showing X–Y of Z" summary for a table().view (or any
+ collection / dataGrid — it only reads `page` and `total()`).
 
 #### Supporting types
 
@@ -921,35 +954,36 @@ interface Column<T> {
 A column descriptor for table().
 
 ```ts
-interface TableClasses<T> {
-	thead?: string;
-	headRow?: string;
-	th?: string;
-	tbody?: string;
-	tr?: string | ((item: T) => string);
-	td?: string;
-	expandRow?: string;
-	expandCell?: string;
-}
+type TableRows<T> = (() => readonly T[]) | readonly T[];
 ```
 
-Extra classes for each part of a table().
+Where a table() gets its rows: a `rows` source, or a shared `view`.
 
 ```ts
-type TableElement<T> = HTMLTableElement & {
-	view: Collection<T>;
-	/** Reactive per-key open flags for expandable rows (`expanded[key]`). */
-	expanded: Record<string, boolean>;
-	/** Toggle a row's detail panel by its key. */
-	toggleRow: (key: unknown) => void;
-};
+type TableView<T> = Pick<Collection<T>, "items" | "sort" | "toggleSort"> & Partial<Collection<T>>;
 ```
 
-The table element: `.view` (the collection), plus expansion controls.
+What table() needs from a shared `view` (a collection() or dataGrid).
 
 ```ts
-interface TableOptions<T> {
-	rows: (() => readonly T[]) | readonly T[];
+type TableOptions<T> = TableBaseOptions<T> & (
+	| { rows: TableRows<T>; view?: undefined }
+	| {
+		/** Render through an existing collection() or dataGrid (anything with
+		 *  `items()`, `sort` and `toggleSort`) instead of building a second one. It
+		 *  owns rows/sort/filter/page — those options and `filterFn` are ignored —
+		 *  and sorting uses its compare. Share it with a toolbar/pager so both agree. */
+		view: TableView<T>;
+		/** Ignored when `view` is given. */
+		rows?: TableRows<T>;
+	}
+);
+```
+
+table() options: `rows`, or a shared `view` (then `rows` is optional and ignored).
+
+```ts
+interface TableBaseOptions<T> {
 	/** Columns — an array, or a thunk `() => Column[]` for a reactive set
 	 *  (column visibility toggle, role-gated columns; rows re-render, elements reused). */
 	fields: Column<T>[] | (() => Column<T>[]);
@@ -982,15 +1016,39 @@ interface TableOptions<T> {
 		td?: (column: Column<T>, item: T) => Record<string, string | number | boolean | null | undefined>;
 		th?: (column: Column<T>) => Record<string, string | number | boolean | null | undefined>;
 	};
-	/** Render through an existing collection() or dataGrid (anything with
-	 *  `items()`, `sort` and `toggleSort`) instead of building a second one. It
-	 *  owns rows/sort/filter/page — those options and `filterFn` are ignored —
-	 *  and sorting uses its compare. Share it with a toolbar/pager so both agree. */
-	view?: Pick<Collection<T>, "items" | "sort" | "toggleSort"> & Partial<Collection<T>>;
 	sortField?: string;
 	sortDesc?: boolean;
 }
 ```
+
+The table() options shared by both row sources (see TableOptions).
+
+```ts
+interface TableClasses<T> {
+	thead?: string;
+	headRow?: string;
+	th?: string;
+	tbody?: string;
+	tr?: string | ((item: T) => string);
+	td?: string;
+	expandRow?: string;
+	expandCell?: string;
+}
+```
+
+Extra classes for each part of a table().
+
+```ts
+type TableElement<T> = HTMLTableElement & {
+	view: Collection<T>;
+	/** Reactive per-key open flags for expandable rows (`expanded[key]`). */
+	expanded: Record<string, boolean>;
+	/** Toggle a row's detail panel by its key. */
+	toggleRow: (key: unknown) => void;
+};
+```
+
+The table element: `.view` (the collection), plus expansion controls.
 
 
 ## datagrid
@@ -1053,6 +1111,8 @@ interface DataGrid<T> {
 	total(): number;
 	/** Number of pages at the current size. */
 	pageCount(): number;
+	/** The page shown: `page.index` clamped to [0, pageCount-1]. */
+	pageIndex(): number;
 	/** Toggle sort on a key (asc, then flip). */
 	toggleSort(key: string): void;
 	sort: SortState;
@@ -1068,8 +1128,12 @@ interface DataGrid<T> {
 	toggle(item: T): void;
 	/** Select every row in the current filtered set (all pages). */
 	selectAll(): void;
+	/** Deselect every id, including rows hidden by the current filter. */
 	clearSelection(): void;
-	/** Select-all if not all selected, else clear. */
+	/**
+	 * Select every filtered row if not all are selected, else deselect only the
+	 * filtered rows (selections hidden by the filter are kept).
+	 */
 	toggleAll(): void;
 	/** True when every filtered row is selected (header checkbox checked). */
 	allSelected(): boolean;
@@ -1141,7 +1205,9 @@ interface HttpOptions {
 	/**
 	 * Prefix for relative URLs, joined to the path with exactly one `/` — a
 	 * leading slash on the path is optional (`"/api/v1"` + `"dimensions"` →
-	 * `/api/v1/dimensions`). URLs starting with `http` are left untouched.
+	 * `/api/v1/dimensions`). Absolute URLs (`https://…`, any `scheme://…`) are
+	 * left untouched; a protocol-relative `//host/…` is treated as a path, so
+	 * the bearer token never leaves the origin.
 	 */
 	baseUrl?: string;
 	/** () => bearer token, attached as Authorization. */
@@ -1210,6 +1276,12 @@ asyncView<T>(res: Resource<T>, views?: AsyncViews<T>): WhenMarker
 ```
 
 Map a resource's state to `when` branches (loading/error/empty/data).
+
+A branch is built once per phase, not per value: a reload that goes
+data → data keeps the data branch (keyed rows, focus, sort/selection state
+survive). Read the live value through the resource inside the branch —
+`data: () => list(() => res.data, (r) => r.id, row)` — the callback's
+argument is only the value the branch was first built with.
 
 #### Supporting types
 
@@ -1328,10 +1400,11 @@ table/collection: `download(toCSV(view.filtered(), columns), "data.csv")`.
 ### `toCSV`
 
 ```ts
-toCSV(rows: readonly any[], columns?: readonly ExportColumn[]): string
+toCSV(rows: readonly any[], columns?: readonly ExportColumn[], options?: ToCSVOptions): string
 ```
 
 Rows → a CSV string (RFC-4180 quoting). Columns default to the first row's keys.
+Formula-looking string cells are guarded by default — see {@link ToCSVOptions}.
 
 ### `download`
 
@@ -1357,6 +1430,18 @@ type ExportColumn =
 	| { key: string; label?: string; value?: (row: any) => unknown; accessor?: (row: any) => unknown };
 ```
 
+```ts
+interface ToCSVOptions {
+	/**
+	 * Prefix string cells (and header labels) starting with = + - @ or tab/CR with
+	 * `'` so spreadsheets don't run them as formulas (CSV injection). Numbers,
+	 * numeric strings — plain or formatted (`"-5"`, `"-1,234.50"`, `"-10%"`,
+	 * `"-$5"`) — and a lone `"-"` are never changed. Default `true`.
+	 */
+	formulaGuard?: boolean;
+}
+```
+
 
 ## spark
 
@@ -1378,6 +1463,10 @@ side. `responsive: true` stretches to the container without distorting strokes.
 inherits the surrounding text colour and works in any theme — set `color` on a
 parent, or pass `stroke`/`fill`. A single-point (or perfectly flat) series
 renders centered, not pinned to the corner.
+
+**Gaps:** a `null`/`undefined`/`NaN` value is a gap — the line/area breaks
+there (a new subpath), a bar is skipped, and `project()` omits that point
+(the rest keep their `index`). Gaps don't count toward the y extent.
 
 **`axis: true`** draws only a **baseline rule** (a `<line>` in `currentColor` at
 low opacity) — no tick labels; this is a primitive, not an axis component. For
@@ -1406,7 +1495,8 @@ project<T = any>(source: (() => readonly T[]) | readonly T[], opts?: SparkOption
 
 Where each datum lands on screen under the same options a `spark()` uses — the
 points its marks are drawn from. Hit-test a pointer against them for a
-tooltip or cursor. Reads the source once, now.
+tooltip or cursor. Reads the source once, now. Gap points (null/NaN values)
+are left out; each point's `index` still refers to the source array.
 
 #### Supporting types
 
@@ -1614,6 +1704,7 @@ fromEvent<T = any, R = T>(source: Emitter | EventTarget, type: string, map?: (de
 ```
 
 Turn an event source into reactive state holding the latest mapped detail.
+The listener is removed when the enclosing scope/effect is disposed.
 
 ### `channel`
 
@@ -1664,7 +1755,7 @@ interface Channel {
 	on<T = any>(type: string, handler: Handler<T>): () => void;
 	off(type: string, handler: Handler): void;
 	once<T = any>(type: string): Promise<T>;
-	emit(type: string, detail?: any): unknown;
+	emit(type: string, detail?: any): Channel;
 	close(): void;
 }
 ```
@@ -1706,12 +1797,25 @@ The default toast controller wired to the global bus.
 ### `notify`
 
 ```ts
-notify: { success(content: Renderable): void; error(content: Renderable): void; info(content: Renderable): void; warning(content: Renderable): void; }
+notify: { success(content: Renderable | ToastPayload): void; error(content: Renderable | ToastPayload): void; info(content: Renderable | ToastPayload): void; warning(content: Renderable | ToastPayload): void; }
 ```
 
-Fire-and-forget notifications through the global bus. Content is renderable.
+Fire-and-forget notifications through the global bus. Content is a
+ renderable, or a `{ message | content | body, title, … }` payload.
 
 #### Supporting types
+
+```ts
+interface ToastPayload extends ToastMeta {
+	content?: Renderable;
+	message?: Renderable;
+	body?: Renderable;
+}
+```
+
+An object payload for a bus toast event / notify: the content is taken from
+`content`, else `message`, else `body`; every other field (title, id,
+duration, description, …) becomes the toast's meta.
 
 ```ts
 interface ToastItem {
@@ -1752,7 +1856,7 @@ interface ToastsOptions {
 	bus?: Emitter;
 	/** Auto-dismiss delay in ms (0 = sticky). */
 	timeout?: number;
-	/** Identical-message suppression window in ms. */
+	/** Identical-message suppression window in ms (only while the earlier toast is still showing). */
 	dedupeWindow?: number;
 	/** Keep a dismissed toast (marked `removed`) this long before deleting it (default 0). */
 	exitMs?: number;

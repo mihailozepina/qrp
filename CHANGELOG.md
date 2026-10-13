@@ -6,7 +6,86 @@ find out by reading a diff. Newest first.
 
 ## Unreleased
 
-_(nothing yet)_
+A batch of community fixes (thanks @mihailozepina, #1–#27).
+
+- ⚠️ **BREAKING (`export`): `toCSV` guards against CSV/formula injection by
+  default.** String cells and header labels starting with `=` `+` `-` `@` or a
+  tab/CR get a leading `'` so Excel/Sheets show them as text. Numbers, numeric
+  strings — plain or formatted (`"-1,234.50"`, `"-10%"`, `"-$5"`) — and a lone
+  `"-"` are left alone, so `format` output stays numeric. Opt out with
+  `toCSV(rows, columns, { formulaGuard: false })`. (#22)
+- ⚠️ **BREAKING (`collection`/`table`): a consistent sort order.** The old
+  `a > b ? 1 : -1` comparator broke `Array#sort` on null/undefined/mixed values.
+  The new default (exported as `compareValues`) sorts missing values last in
+  both directions, numbers and Dates numerically, and strings in natural,
+  locale-aware order: `"item 2"` before `"item 10"`, and `"a"` before `"B"`
+  (code-unit order put `"B"` first). (#11)
+- ⚠️ **BREAKING (`forms`): radio groups get a unique `name`**
+  (`qrp-radioN-<key>`, was the key), so two forms over the same key no longer
+  share one group. Flat dotted keys (`{ "server.port": … }`) are bound as-is
+  instead of being split into a nested path. (#10)
+- ⚠️ **Types: `TableOptions<T>` is now a union type alias** (`rows` or `view`).
+  An `interface X extends TableOptions<T>` should extend `TableBaseOptions<T>`.
+  `tablePager`/`tableSummary` accept a `dataGrid`, and toast payload types match
+  what the runtime accepts. (#23)
+- **Core: `list()` follows every in-place array mutator** (`sort`, `reverse`,
+  `splice`, `unshift`, `shift`, `fill`, `copyWithin`, `rows[i] = x`), re-running
+  once per call against the final array. `unshift`/`shift` used to re-run
+  mid-operation and drop a row with a bogus duplicate-key error. (#1)
+- **Core: `list()` rows may render several nodes or a `when()`.** Only the first
+  node was kept, so a row returning a `when()` vanished after a flip. `itemFor`
+  resolves nodes inside such rows. (#2)
+- **Core: `scope()`/`scoped()`/`mount()` own their effects inside a running
+  effect**, and the enclosing effect disposes them on re-run. (#3)
+- **Core: `el()` prop fixes.** `null`/`undefined`/`false` on a DOM property
+  removes it instead of rendering `"null"`/`"false"` (`href: null`,
+  `class: () => on && "x"`); `false` still means `"false"` on `aria*` props and
+  `contentEditable`. `bind` applies after the other props (so `type` is set
+  first), and a style object sets `--custom` properties. (#4)
+- **Core: `list()`/`when()` no longer throw after their container is cleared.** (#5)
+- **Router: `currentRoute` updates atomically** (an effect never sees a new
+  path with old params), and a stale View Transition swap no longer mounts the
+  wrong page on fast A → B → A navigation or after `dispose()`. (#6)
+- **`resource`: documented that `asyncView` builds a branch once per phase.**
+  Read `res.data` inside the data branch (`() => list(() => res.data, …)`) to
+  follow reloads; the branch is not rebuilt per value. (#7, docs only)
+- **`http`:** an aborted request no longer emits `error`; only `scheme://` URLs
+  skip `baseUrl` (`"httpbin/x"` used to; a protocol-relative `//host` is treated
+  as a path so the token never leaves the origin); a custom `fetch` that throws
+  synchronously rejects and releases the loader. (#8)
+- **`html`:** renderables (`when`/`list`/userland) render in `html` holes, SVG
+  attribute holes use `setAttribute`, and `html.template` wires `on*` handlers. (#9)
+- **`collection`: `pageIndex()`** returns the clamped page that `items()` shows;
+  `tablePager`, `tableSummary` and `datagrid` use it, so a filter that shrinks
+  the set no longer reads "Showing 91–25 of 25". (#12)
+- **`datagrid`: `toggleAll()` "off" deselects only the filtered rows**, keeping
+  selections the filter hides (symmetric with `selectAll`). (#13)
+- **`toasts`:** a repeat message is deduped only onto a toast still on screen;
+  the stock renderer is a keyed `list()`, so enter animations don't restart. (#14)
+- **`events`:** each `on()` returns an unsubscribe for that subscription only
+  (the same handler twice no longer leaks); `fromEvent` unsubscribes on dispose;
+  the no-`BroadcastChannel` fallback gets `close()` and its `emit` reaches the
+  channel. (#15)
+- **`busyWhile`: `run()` inside an effect no longer subscribes it to the
+  counter**, which re-ran the effect forever (unbounded memory). (#16)
+- **`browser`:** `persisted` survives a throwing `localStorage` (quota/private
+  mode); `poll().stop()` isn't undone by the tab becoming visible again, and
+  `start()` while hidden waits for visibility; odd cookies (`%`, no `=`) parse. (#17)
+- **`trapFocus` skips elements Tab can't reach** (`tabindex="-1"`, `[hidden]`,
+  `[inert]`, not rendered), so focus no longer escapes the dialog. (#18)
+- **`spark`:** null/NaN points are gaps (the line splits) instead of throwing or
+  producing NaN paths, and very large series no longer overflow the stack. (#19)
+- **`format`:** invalid dates return `""` instead of throwing;
+  `minimumFractionDigits` above the default maximum works; values are rounded
+  before the unit is picked (`"1 minute"`, not `"60 seconds"`). (#20)
+- **`utils`:** `memoize` keeps its expiry map bounded by the LRU, an evicted key
+  doesn't inherit a stale expiry, and a promise settling after `invalidate()`
+  can't clobber the new entry; `precacheWithRefresh` ignores out-of-order
+  responses and stops when its scope is disposed; `loadScript` has no unhandled
+  rejection; `validate` handles `/g` and `/y` patterns. (#21)
+- **Tooling:** lint covers every module and `bin/`; CI also builds, packs and
+  checks `docs/API.md` is in sync; `gen-api` no longer truncates signatures at
+  `=>`. (#24, #25, #27) Docs: read `Object.entries` list items through the item. (#26)
 
 ## 0.12.2
 

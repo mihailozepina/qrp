@@ -126,7 +126,10 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
 - `collection/index.js` — reactive sort/filter/paginate combiner over a
   dataset; `.items` drives a keyed `list()`. The `form()`-analog for data.
   `.filtered()` exposes the full filtered set (unpaged/unsorted) for
-  select-all/export.
+  select-all/export; `.pageIndex()` is the clamped page `items()` shows (pagers/
+  summaries read it, not raw `page.index`). Default sort = exported
+  `compareValues` (missing last, numbers/Dates numeric, strings natural order
+  via one shared `Intl.Collator`).
 - `datagrid/index.js` — headless data-grid state machine over `collection`:
   keyed row selection (select-all + indeterminate; survives sort/filter/page +
   refetch), column visibility, page-size, windowed pager. State only, no markup
@@ -157,6 +160,8 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
     transport-agnostic (fetcher thunk); optional `refreshOn` bus event(s) for a
     global refresh; `asyncView(res, { loading, error, empty, data })` → `when`.
   - `export/index.js` — `toCSV`/`download`/`copy`; pairs with table/collection.
+    `toCSV` guards formula injection by default (`'` prefix) but leaves plain/
+    formatted numbers and a lone "-" alone; `{ formulaGuard: false }` opts out.
   - `spark/index.js` — charting PRIMITIVE (not a library): data → reactive `el()`
     `<svg>` (line/area/bar). Enabled by SVG-aware `el`; composes `scale`.
   - `scale/index.js` — micro scales (`linear`/`ordinal`/`quantize`/`ticks`) +
@@ -195,7 +200,7 @@ browser and Node ESM don't auto-resolve a bare directory to `index.js`, so the
   asked; ~doubles the tarball, zero runtime cost). The npm package ships `dist/` (minified) + the hand-written
   `.d.ts` — **not** the raw source `.js` — plus `docs/*.md` + `CHANGELOG.md` (so
   the reference travels with the package: a coding agent reads the API straight
-  out of `node_modules`). Core is **~5.0 KB min+gzip**, whole library ~27.4 KB.
+  out of `node_modules`). Core is **~5.7 KB min+gzip**, whole library ~29.7 KB.
   `dist/` is gitignored (rebuilt on pack/publish). The consumer still runs zero
   build. (No code-splitting: the opaque `chunk-*.js` files it produced made
   self-hosting on a plain static server confusing — the user rejected chunking.)
