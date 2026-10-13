@@ -18,6 +18,7 @@
  * Hole rules mirror el(), routed through the same effect() primitive:
  *   - string / number  → escaped TEXT (never raw HTML — no injection)
  *   - Node / array     → inserted as-is
+ *   - when() / list()  → rendered like an el() child (any renderable)
  *   - () => value      → reactive text / attribute binding
  *   - onX=${fn}        → event listener
  *   - ref(value)       → a token you can embed in a PLAIN string (see ref)
@@ -33,7 +34,7 @@
  * `class="a ${x} ${y}"`); no attribute-name or spread holes (`<div ${obj}>`).
  */
 
-import { effect } from "../qrp/index.js";
+import { effect, renderable } from "../qrp/index.js";
 
 const HOLE = (i) => `__qrp_hole_${i}__`;
 const CHILD_MARKER = (i) => `qrp-hole:${i}`;
@@ -81,9 +82,15 @@ const resolveRef = (value) => {
 	return value;
 };
 
-// Minimal attribute setter, mirroring el()'s rules.
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// Minimal attribute setter, mirroring el()'s rules. SVG attributes (viewBox,
+// cx, d, …) are read-only SVGAnimated* properties and `className` is a
+// read-only SVGAnimatedString, so SVG-namespaced nodes always use setAttribute.
 const setAttr = (node, key, value) => {
-	if(key === "class") {
+	const isSvg = node.namespaceURI === SVG_NS;
+
+	if(key === "class" && !isSvg) {
 		node.className = value == null ? "" : value;
 
 		return;
@@ -95,7 +102,7 @@ const setAttr = (node, key, value) => {
 		return;
 	}
 
-	if(key in node) {
+	if(!isSvg && key in node) {
 		node[key] = value;
 
 		return;
@@ -115,6 +122,17 @@ const toNodes = (value) => {
 
 	if(Array.isArray(value)) {
 		return value.flatMap(toNodes);
+	}
+
+	// A renderable (when()/list() or a userland peer): let it render into a
+	// fragment — its anchor's parentNode re-resolves to the real parent once
+	// these nodes are inserted, so later swaps still work (same as el()).
+	if(value[renderable]) {
+		const frag = document.createDocumentFragment();
+
+		value[renderable](frag);
+
+		return [...frag.childNodes];
 	}
 
 	if(value instanceof Node) {
@@ -328,6 +346,27 @@ const TEMPLATE_FIELD_RE = /#\{([\w.]+)\}/g;
 
 const getPath = (obj, path) => path.split(".").reduce((o, key) => (o == null ? o : o[key]), obj);
 
+// Name of the attribute whose value `markup` currently ends inside, or null.
+const openAttrName = (markup) => {
+	const m = insideTag(markup) && markup.match(/([^\s"'=<>/]+)\s*=\s*["']?$/);
+
+	return m ? m[1].toLowerCase() : null;
+};
+
+// An on* hole gets a listener that calls the field's CURRENT handler (the
+// getter itself is not a listener — it would just return the function).
+const fieldValue = (data, field, isEvent) => {
+	if(isEvent) {
+		return function(event) {
+			const handler = getPath(data, field);
+
+			return typeof handler === "function" ? handler.call(this, event) : undefined;
+		};
+	}
+
+	return () => getPath(data, field);
+};
+
 /**
  * Compile a STORABLE template string with #{field} placeholders into a filler.
  * Because #{} is not JavaScript interpolation, the source survives as literal
@@ -356,7 +395,9 @@ html.template = (source) => {
 
 		const index = fields.length;
 
-		fields.push(m[1]);
+		const attr = openAttrName(markup);
+
+		fields.push({ path: m[1], isEvent: !!attr && attr.startsWith("on") });
 		markup = appendMarker(markup, index);
 
 		last = m.index + m[0].length;
@@ -366,5 +407,5 @@ html.template = (source) => {
 
 	// Each field becomes a reactive getter bound to the data object, so filling
 	// with qrp state tracks; filling with a plain object is a one-shot read.
-	return (data) => render(markup, fields.map((field) => () => getPath(data, field)));
+	return (data) => render(markup, fields.map((field) => fieldValue(data, field.path, field.isEvent)));
 };

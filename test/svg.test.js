@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { state, el } from "../qrp/index.js";
+import { html } from "../html/index.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -41,4 +42,15 @@ test("HTML el() still uses properties (regression)", () => {
 	const input = el("input", { value: "hi", class: "field" });
 	assert.equal(input.value, "hi");       // property set
 	assert.equal(input.className, "field"); // className path
+});
+
+test("html`` sets SVG attribute holes via setAttribute", () => {
+	const svg = html`<svg viewBox=${"0 0 10 10"} class=${"chart"}><circle cx=${5} cy=${() => 6} r="2"></circle></svg>`;
+	const circle = svg.querySelector("circle");
+
+	assert.equal(svg.namespaceURI, SVG_NS);
+	assert.equal(svg.getAttribute("viewBox"), "0 0 10 10");
+	assert.equal(svg.getAttribute("class"), "chart");
+	assert.equal(circle.getAttribute("cx"), "5");
+	assert.equal(circle.getAttribute("cy"), "6");
 });
