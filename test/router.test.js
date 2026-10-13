@@ -210,3 +210,51 @@ test("setQuery updates the query string in place (no remount) + currentRoute.que
 
 	app.dispose();
 });
+
+test("currentRoute updates atomically: an effect never sees a new path with old params", () => {
+	history.replaceState(null, "", "/u/1");
+
+	const outlet = document.createElement("div");
+	const app = router({
+		"/u/:id": (view) => view.appendChild(el("h1", {}, "user")),
+		"/p/:id": (view) => view.appendChild(el("h1", {}, "post"))
+	}, outlet, { transitions: false });
+
+	const seen = [];
+	const runner = effect(() => seen.push(`${currentRoute.path} ${JSON.stringify(currentRoute.params)}`));
+
+	navigate("/p/9");
+	assert.deepEqual(seen, ["/u/1 {\"id\":\"1\"}", "/p/9 {\"id\":\"9\"}"]);
+
+	runner.dispose();
+	app.dispose();
+});
+
+test("fast A → B → A with async View Transitions leaves page A on screen", async () => {
+	history.replaceState(null, "", "/a");
+
+	// Mock: the swap callback runs on a microtask, like a real transition.
+	document.startViewTransition = (callback) => { queueMicrotask(callback); };
+
+	try {
+		const outlet = document.createElement("div");
+		const app = router({
+			"/a": (view) => view.appendChild(el("h1", {}, "A")),
+			"/b": (view) => view.appendChild(el("h1", {}, "B"))
+		}, outlet);
+
+		await Promise.resolve();
+		assert.equal(outlet.textContent, "A");
+
+		navigate("/b");
+		navigate("/a");
+		await new Promise(resolve => setTimeout(resolve, 0));
+
+		assert.equal(location.pathname, "/a");
+		assert.equal(outlet.textContent, "A");
+
+		app.dispose();
+	} finally {
+		delete document.startViewTransition;
+	}
+});
