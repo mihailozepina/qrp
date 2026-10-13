@@ -36,3 +36,15 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # bin/build.js also guards that every package.json export resolves —
+      # otherwise that only runs at prepack, i.e. on publish.
+      - name: Build
+        run: npm run build
+
+      - name: Pack (dry run)
+        run: npm pack --dry-run
+
+      # docs/API.md is generated from the .d.ts; fail if it's out of date.
+      - name: API docs in sync
+        run: npm run docs && git diff --exit-code docs/API.md
