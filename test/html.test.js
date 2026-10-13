@@ -3,7 +3,7 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { state, el } from "../qrp/index.js";
+import { state, el, list, when } from "../qrp/index.js";
 import { html, ref } from "../html/index.js";
 
 test("html() from a plain string builds a DOM node", () => {
@@ -137,4 +137,46 @@ test("html.template compiles once, fills many times independently", () => {
 	assert.equal(a.textContent, "alice");
 	assert.equal(b.textContent, "bob");
 	assert.notEqual(a, b); // fresh DOM each call
+});
+
+test("html`` renders a list() renderable in a child hole", () => {
+	const s = state({ items: ["a", "b"] });
+	const node = html`<ul>${list(() => s.items, (x) => x, (x) => el("li", {}, x))}</ul>`;
+
+	assert.deepEqual([...node.querySelectorAll("li")].map((li) => li.textContent), ["a", "b"]);
+	assert.ok(!node.textContent.includes("[qrp"));
+
+	s.items = ["a", "b", "c"];
+
+	assert.deepEqual([...node.querySelectorAll("li")].map((li) => li.textContent), ["a", "b", "c"]);
+});
+
+test("html`` renders a when() renderable, directly and from a reactive hole", () => {
+	const s = state({ on: true });
+	const direct = html`<div>${when(() => s.on, () => "yes", () => "no")}</div>`;
+	const viaFn = html`<div>${() => when(() => s.on, () => "yes", () => "no")}</div>`;
+
+	assert.equal(direct.textContent, "yes");
+	assert.equal(viaFn.textContent, "yes");
+
+	s.on = false;
+
+	assert.equal(direct.textContent, "no");
+	assert.equal(viaFn.textContent, "no");
+});
+
+test("html.template on* hole calls the current handler", () => {
+	let calls = 0;
+	const data = state({ save: () => { calls++; } });
+	const node = html.template("<button onclick=\"#{save}\">Save</button>")(data);
+
+	node.click();
+	assert.equal(calls, 1);
+
+	let other = 0;
+
+	data.save = () => { other++; };
+	node.click();
+	assert.equal(calls, 1);
+	assert.equal(other, 1);
 });
