@@ -245,3 +245,77 @@ test("a repeat dismiss during qrp's own exit phase is ignored, then the item lea
 	await new Promise((resolve) => setTimeout(resolve, 25));
 	assert.equal(t.store.items.length, 0);
 });
+
+test("dedupe: a message whose toast was dismissed shows again inside the window", () => {
+	const { ctl, root } = setup({ dedupeWindow: 1000 });
+	const first = ctl.error("Save failed");
+
+	ctl.dismiss(first);
+
+	const second = ctl.error("Save failed");
+
+	assert.notEqual(second, first, "a fresh id, not the dead one");
+	assert.equal(ctl.store.items.length, 1);
+	assert.equal(root.querySelectorAll(".qrp-toast-error").length, 1);
+});
+
+test("dedupe: a toast mid-exit (flagged removed) does not swallow the repeat", () => {
+	const { ctl } = setup({ dedupeWindow: 1000, exitMs: 50 });
+	const first = ctl.error("Save failed");
+
+	ctl.dismiss(first);
+	assert.equal(ctl.store.items[0].removed, true);
+
+	const second = ctl.error("Save failed");
+
+	assert.notEqual(second, first);
+	assert.deepEqual(ctl.store.items.map((t) => [t.id, t.removed]), [[first, true], [second, false]]);
+});
+
+test("dedupe: past the window the same message is a new toast", async () => {
+	const { ctl } = setup({ dedupeWindow: 10 });
+	const first = ctl.info("a");
+
+	ctl.info("b");
+	await wait(20);
+
+	assert.notEqual(ctl.info("a"), first);
+	assert.equal(ctl.store.items.length, 3);
+});
+
+test("the stock renderer is keyed: pushing/removing keeps the other toast elements", () => {
+	const { ctl, root } = setup({ exitMs: 20 });
+	const first = ctl.info("first");
+	const node = root.querySelector(".qrp-toast");
+
+	ctl.info("second");
+	assert.equal(root.querySelectorAll(".qrp-toast").length, 2);
+	assert.equal(root.querySelector(".qrp-toast"), node, "first toast's element survives a push");
+
+	const third = ctl.info("third");
+
+	ctl.dismiss(first);
+	assert.equal(root.querySelector(".qrp-toast"), node, "exit phase flags the same element");
+	assert.ok(node.classList.contains("qrp-toast-exit"));
+
+	const thirdNode = root.querySelectorAll(".qrp-toast")[2];
+
+	ctl.dismiss(ctl.store.items[1].id);
+	assert.equal(root.querySelectorAll(".qrp-toast")[2], thirdNode, "a sibling's exit does not rebuild the rest");
+	assert.equal(ctl.store.items[2].id, third);
+});
+
+test("the stock renderer markup is unchanged", () => {
+	const { ctl, root } = setup();
+
+	ctl.success("Saved");
+
+	const stack = root.querySelector(".qrp-toasts");
+
+	assert.equal(stack.children.length, 1);
+	assert.equal(stack.children[0].className, "qrp-toast qrp-toast-success");
+	assert.equal(stack.children[0].getAttribute("role"), "status");
+	assert.deepEqual([...stack.children[0].children].map((child) => child.className), ["qrp-toast-title", "qrp-toast-body", "qrp-toast-close"]);
+	stack.querySelector(".qrp-toast-close").click();
+	assert.equal(stack.children.length, 0);
+});

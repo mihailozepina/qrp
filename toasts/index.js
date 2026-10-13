@@ -28,14 +28,15 @@
  * a thunk (() => el(...)) so each toast builds its own node, rather than sharing
  * one live node between them.
  *
- * Repeated identical (string) messages inside DEDUPE_WINDOW are collapsed (so a
- * retry storm doesn't bury the screen), and each toast auto-dismisses after
+ * Repeated identical (string) messages inside DEDUPE_WINDOW are collapsed onto
+ * the first while it is still showing (so a retry storm doesn't bury the screen;
+ * a dismissed one shows again), and each toast auto-dismisses after
  * TIMEOUT (per toast: `meta.duration`). `push` returns the toast's id, and
  * `update` / `pause` / `resume` / `dismiss` take it — enough for a richer
  * renderer (a sonner-style stack) to be just a view over `store.items`.
  */
 
-import { state, el } from "../qrp/index.js";
+import { state, el, list } from "../qrp/index.js";
 import { bus } from "../events/index.js";
 
 // --- configuration ----------------------------------------------------------
@@ -78,7 +79,14 @@ export const createToasts = (options = {}) => {
 	const store = state({ items: [] });
 
 	// message key -> { at, id } of the last one shown, for deduping bursts.
+	// Entries older than the window are pruned on each push, so it stays small.
 	const lastSeen = {};
+
+	const pruneLastSeen = (now) => {
+		Object.keys(lastSeen)
+			.filter((key) => now - lastSeen[key].at >= dedupeWindow)
+			.forEach((key) => { delete lastSeen[key]; });
+	};
 
 	// id -> { remaining, started, handle } — one countdown per toast.
 	const timers = new Map();
@@ -237,9 +245,15 @@ export const createToasts = (options = {}) => {
 		if(typeof content === "string" && meta.id === undefined) {
 			const now = Date.now();
 			const key = variant + ":" + content;
-			const last = lastSeen[key];
 
-			if(last && now - last.at < dedupeWindow) {
+			pruneLastSeen(now);
+
+			// Collapse only onto a toast that is still showing — not one that was
+			// dismissed (gone, or flagged `removed` mid-exit) inside the window.
+			const last = lastSeen[key];
+			const shown = last && find(last.id);
+
+			if(shown && !shown.removed) {
 				return last.id;
 			}
 
@@ -294,22 +308,24 @@ export const createToasts = (options = {}) => {
 	emitter.on("toast", (payload) => push(isRecord(payload) && payload.variant ? payload.variant : "info", contentOf(payload), metaOf(payload)));
 
 	// --- the mountable component --------------------------------------------
+	// Keyed by toast id: a push or removal only adds/removes that toast's
+	// element, so the others keep their node (no restarted enter animation, no
+	// element swapped out from under the pointer). Each row's bindings track
+	// its own toast, so update() / the `removed` exit flag re-render in place.
 	const component = (view) => {
-		view.appendChild(el("div", { class: "qrp-toasts" }, () => {
-			return store.items.map((toast) => {
-				return el("div", {
-					class: () => `qrp-toast qrp-toast-${toast.variant}${toast.removed ? " qrp-toast-exit" : ""}`,
-					role: "status",
-					onpointerenter: () => pause(toast.id),
-					onpointerleave: () => resume(toast.id)
-				},
-				el("strong", { class: "qrp-toast-title" }, () => toast.title),
-				// A thunk content is called here, so each toast builds its own nodes.
-				el("span", { class: "qrp-toast-body" }, () => (typeof toast.content === "function" ? toast.content() : toast.content)),
-				el("button", { class: "qrp-toast-close", onclick: () => dismiss(toast.id) }, "✕")
-				);
-			});
-		}));
+		view.appendChild(el("div", { class: "qrp-toasts" }, list(() => store.items, (toast) => toast.id, (toast) => {
+			return el("div", {
+				class: () => `qrp-toast qrp-toast-${toast.variant}${toast.removed ? " qrp-toast-exit" : ""}`,
+				role: "status",
+				onpointerenter: () => pause(toast.id),
+				onpointerleave: () => resume(toast.id)
+			},
+			el("strong", { class: "qrp-toast-title" }, () => toast.title),
+			// A thunk content is called here, so each toast builds its own nodes.
+			el("span", { class: "qrp-toast-body" }, () => (typeof toast.content === "function" ? toast.content() : toast.content)),
+			el("button", { class: "qrp-toast-close", onclick: () => dismiss(toast.id) }, "✕")
+			);
+		})));
 	};
 
 	// Direct helpers, one per variant (push without going through the bus).
