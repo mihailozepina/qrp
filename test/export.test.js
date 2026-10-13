@@ -19,6 +19,44 @@ test("toCSV empty → header only (derived keys)", () => {
 	assert.equal(toCSV([], ["a", "b"]), "a,b");
 });
 
+test("toCSV guards formula-looking string cells by default (CSV injection)", () => {
+	const rows = [
+		{ v: "=HYPERLINK(\"http://evil\")" },
+		{ v: "+cmd" },
+		{ v: "-2+3" },
+		{ v: "@SUM(A1)" },
+		{ v: "\tx" },
+		{ v: "\rx" },
+		{ v: "safe" }
+	];
+	const csv = toCSV(rows, ["v"]);
+	assert.equal(csv, [
+		"v",
+		"\"'=HYPERLINK(\"\"http://evil\"\")\"",
+		"'+cmd",
+		"'-2+3",
+		"'@SUM(A1)",
+		"'\tx",
+		"\"'\rx\"",
+		"safe"
+	].join("\r\n"));
+});
+
+test("toCSV formula guard leaves numbers and numeric strings alone", () => {
+	const rows = [{ n: -5, s: "-5", f: "+1.5e3", d: "-0.25" }];
+	assert.equal(toCSV(rows), "n,s,f,d\r\n-5,-5,+1.5e3,-0.25");
+});
+
+test("toCSV guards header labels too", () => {
+	assert.equal(toCSV([], [{ key: "a", label: "=1+1" }]), "'=1+1");
+});
+
+test("toCSV { formulaGuard: false } writes cells unchanged", () => {
+	const rows = [{ v: "=1+1" }];
+	assert.equal(toCSV(rows, ["v"], { formulaGuard: false }), "v\r\n=1+1");
+	assert.equal(toCSV(rows, undefined, { formulaGuard: false }), "v\r\n=1+1");
+});
+
 test("download creates + clicks an anchor (no throw)", () => {
 	const origCreate = URL.createObjectURL, origRevoke = URL.revokeObjectURL;
 	URL.createObjectURL = () => "blob:x";

@@ -164,9 +164,10 @@ const _rate = rate(_pts);
 const _ds = downsample(_pts, 1);
 void _rate; void _ds;
 const _csv: string = toCSV([{ a: 1 }], ["a", { key: "a", label: "A" }]);
+const _rawCsv: string = toCSV([{ a: "=1" }], undefined, { formulaGuard: false });
 const _pl = poll(() => {}, 1000, { immediate: true, whenHidden: false });
 _pl.stop();
-void _fnum; void _fcompact; void _frel; void _rdata; void _rloading; void _lin; void _col; void _csv;
+void _fnum; void _fcompact; void _frel; void _rdata; void _rloading; void _lin; void _col; void _csv; void _rawCsv;
 
 // --- behaviors: disclosure modes, anchored placement, layered dismissable ----
 

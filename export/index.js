@@ -4,8 +4,19 @@
  * Every dashboard needs it; nobody should hand-roll CSV escaping again.
  */
 
-const escapeCell = (value) => {
-	const s = value == null ? "" : String(value);
+// CSV/formula injection (OWASP): a spreadsheet runs a cell that starts with
+// = + - @ (or tab/CR) as a formula. Prefixing a single quote makes it text.
+// Only STRING cells are guarded, and never a plain numeric string ("-5",
+// "+1.5e3") — those can't carry a formula, and numbers must stay numbers.
+const FORMULA_START = /^[=+\-@\t\r]/;
+const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+const guardFormula = (value) =>
+	typeof value === "string" && FORMULA_START.test(value) && !NUMERIC.test(value) ? `'${value}` : value;
+
+const escapeCell = (value, guard) => {
+	const raw = guard ? guardFormula(value) : value;
+	const s = raw == null ? "" : String(raw);
 
 	return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, "\"\"")}"` : s;
 };
@@ -26,12 +37,24 @@ const normalizeColumn = (column) => {
 /**
  * Rows → a CSV string (RFC-4180 quoting). `columns` is a list of key strings or
  * `{ key, label?, value? }` descriptors; omitted, it uses the first row's keys.
+ *
+ * By default string cells (and header labels) that start with = + - @ or a
+ * tab/CR are prefixed with `'` so Excel/Sheets treat them as text, not formulas
+ * (CSV injection). Numbers and numeric strings like "-5" are left as-is. Pass
+ * `{ formulaGuard: false }` for the raw values (e.g. a CSV for another program).
+ *
+ * @param {object[]} rows
+ * @param {Array<string|object>} [columns]
+ * @param {object} [options]
+ * @param {boolean} [options.formulaGuard] prefix formula-looking strings with ' (default true)
+ * @returns {string}
  */
-export const toCSV = (rows, columns) => {
+export const toCSV = (rows, columns, options = {}) => {
+	const guard = options.formulaGuard !== false;
 	const source = columns && columns.length ? columns : Object.keys(rows[0] || {});
 	const cols = source.map(normalizeColumn);
-	const header = cols.map((c) => escapeCell(c.label)).join(",");
-	const body = rows.map((row) => cols.map((c) => escapeCell(c.value(row))).join(",")).join("\r\n");
+	const header = cols.map((c) => escapeCell(c.label, guard)).join(",");
+	const body = rows.map((row) => cols.map((c) => escapeCell(c.value(row), guard)).join(",")).join("\r\n");
 
 	return rows.length ? `${header}\r\n${body}` : header;
 };
