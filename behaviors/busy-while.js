@@ -4,7 +4,7 @@
  * generic cousin of http.loading).
  */
 
-import { state } from "../qrp/index.js";
+import { state, untracked } from "../qrp/index.js";
 
 /**
  * Track how many promises are in flight. `b.state.pending` is a reactive
@@ -24,11 +24,16 @@ export const busyWhile = () => {
 		 * @returns {Promise} the same promise
 		 */
 		run: (promise) => {
-			self.pending += 1;
-
-			return Promise.resolve(promise).finally(() => {
-				self.pending -= 1;
+			// `+= 1` READS `pending`; untracked keeps a run() called from inside
+			// an effect from subscribing that effect to the counter it bumps
+			// (which would re-run it, call run() again, and loop forever).
+			untracked(() => {
+				self.pending += 1;
 			});
+
+			return Promise.resolve(promise).finally(() => untracked(() => {
+				self.pending -= 1;
+			}));
 		},
 
 		// Reactive when read inside an effect().
