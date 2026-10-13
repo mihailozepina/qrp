@@ -57,8 +57,12 @@ export interface DataGrid<T> {
 	toggle(item: T): void;
 	/** Select every row in the current filtered set (all pages). */
 	selectAll(): void;
+	/** Deselect every id, including rows hidden by the current filter. */
 	clearSelection(): void;
-	/** Select-all if not all selected, else clear. */
+	/**
+	 * Select every filtered row if not all are selected, else deselect only the
+	 * filtered rows (selections hidden by the filter are kept).
+	 */
 	toggleAll(): void;
 	/** True when every filtered row is selected (header checkbox checked). */
 	allSelected(): boolean;

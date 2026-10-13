@@ -90,7 +90,11 @@ export const dataGrid = (source, options = {}) => {
 		return picked > 0 && picked < all.length;   // → indeterminate
 	};
 
-	const toggleAll = () => (allSelected() ? clearSelection() : selectAll());
+	// Symmetric with selectAll: the "off" step only deselects the filtered set,
+	// so selections hidden by the current filter survive a toggle round-trip.
+	// clearSelection() stays the clear-everything escape hatch.
+	const deselectAll = () => batch(() => view.filtered().forEach(deselect));
+	const toggleAll = () => (allSelected() ? deselectAll() : selectAll());
 
 	// --- column visibility ---------------------------------------------------
 	const columns = options.columns || [];
