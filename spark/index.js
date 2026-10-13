@@ -16,7 +16,7 @@ const accessor = (spec, fallback) => {
 	if(typeof spec === "function") { return spec; }
 	if(spec == null) { return fallback; }
 
-	return (d) => d[spec];
+	return (d) => (d == null ? undefined : d[spec]);
 };
 
 const round = (n) => n.toFixed(2);
@@ -115,7 +115,9 @@ const curvePath = (points, type) => {
 // edge — so one snapshot renders centered, not pinned to the corner.
 const axisScale = ([lo, hi], range) => (lo === hi ? () => (range[0] + range[1]) / 2 : linear([lo, hi], range));
 
-const extent = (values) => [Math.min(...values), Math.max(...values)];
+// A loop, not Math.min(...values): spreading a long series overflows the stack.
+// Non-finite values (gaps) are ignored.
+const extent = (values) => values.reduce(([lo, hi], v) => (Number.isFinite(v) ? [Math.min(lo, v), Math.max(hi, v)] : [lo, hi]), [Infinity, -Infinity]);
 
 const readDomain = (domain) => (typeof domain === "function" ? domain() : domain);
 
@@ -142,15 +144,25 @@ const geometry = (data, opts) => {
 	const kind = opts.kind || "line";
 	const { width, height, padding } = sizeOf(opts);
 	const getX = accessor(opts.x, (_d, i) => i);
-	const getY = accessor(opts.y, (d) => (typeof d === "number" ? d : d.y));
+	const getY = accessor(opts.y, (d) => (typeof d === "number" || d == null ? d : d.y));
 	const stackOf = baselineOf(opts);
 	const base = opts.base;
 
 	if(!data.length) { return []; }
 
 	const lows = data.map((d, i) => (stackOf ? stackOf(d, i) : base));
-	const highs = data.map((d, i) => getY(d, i) + (stackOf ? stackOf(d, i) : 0));
-	const yValues = highs.concat(lows.filter((v) => v !== undefined));
+	// A point whose value is null / NaN is a gap: its high is NaN, so it draws no
+	// mark and stays out of the extent (null + 0 would otherwise coerce to 0).
+	const highs = data.map((d, i) => {
+		const y = getY(d, i);
+
+		return Number.isFinite(y) ? y + (stackOf ? stackOf(d, i) : 0) : NaN;
+	});
+	const present = highs.map((h, i) => Number.isFinite(h) && (lows[i] === undefined || Number.isFinite(lows[i])));
+	const yValues = highs.concat(lows.filter((v, i) => v !== undefined && present[i]));
+
+	if(!present.some(Boolean)) { return []; }
+
 	const fixedY = readDomain(opts.yDomain);
 	const yRange = [height - padding, padding];   // svg y grows down
 
@@ -163,10 +175,12 @@ const geometry = (data, opts) => {
 		const [slot, slots] = opts.group || [0, 1];
 		const barWidth = (bandWidth * (1 - gap)) / slots;
 
-		return data.map((d, i) => {
+		return data.flatMap((d, i) => {
+			if(!present[i]) { return []; }
+
 			const left = padding + i * bandWidth + (bandWidth * gap) / 2 + slot * barWidth;
 
-			return {
+			return [{
 				x: left + barWidth / 2,
 				y: yScale(highs[i]),
 				y0: yScale(stackOf ? lows[i] : zero),
@@ -174,7 +188,7 @@ const geometry = (data, opts) => {
 				left,
 				index: i,
 				datum: d
-			};
+			}];
 		});
 	}
 
@@ -183,14 +197,25 @@ const geometry = (data, opts) => {
 	const xScale = axisScale(readDomain(opts.xDomain) || extent(xs), [padding, width - padding]);
 	const bottom = height - padding;
 
-	return data.map((d, i) => ({
+	return data.flatMap((d, i) => (present[i] && Number.isFinite(xs[i]) ? [{
 		x: xScale(xs[i]),
 		y: yScale(highs[i]),
 		y0: lows[i] === undefined ? bottom : yScale(lows[i]),
 		index: i,
 		datum: d
-	}));
+	}] : []));
 };
+
+// Split projected points into runs of consecutive indices — a gap starts a new run.
+const runsOf = (pts) => pts.reduce((runs, p, i) => {
+	if(i > 0 && p.index === pts[i - 1].index + 1) {
+		runs[runs.length - 1].push(p);
+	} else {
+		runs.push([p]);
+	}
+
+	return runs;
+}, []);
 
 const readSource = (source) => (typeof source === "function" ? source() : source) || [];
 
@@ -237,18 +262,17 @@ export const spark = (source, opts = {}) => {
 	const points = () => geometry(readSource(source), opts);
 	const strokeAttrs = responsive ? { "vector-effect": "non-scaling-stroke" } : {};
 
-	const linePath = () => curvePath(points().map((p) => [p.x, p.y]), curve);
+	// One subpath per run of consecutive points, so a gap in the data is a gap in the mark.
+	const linePath = () => runsOf(points()).map((run) => curvePath(run.map((p) => [p.x, p.y]), curve)).join(" ");
 
-	const areaPath = () => {
-		const pts = points();
-
-		if(!pts.length) { return ""; }
-
-		const top = curvePath(pts.map((p) => [p.x, p.y]), curve);
-		const under = curvePath(pts.map((p) => [p.x, p.y0]).reverse(), curve).replace(/^M/, " L");
+	const areaOf = (run) => {
+		const top = curvePath(run.map((p) => [p.x, p.y]), curve);
+		const under = curvePath(run.map((p) => [p.x, p.y0]).reverse(), curve).replace(/^M/, " L");
 
 		return `${top}${under} Z`;
 	};
+
+	const areaPath = () => runsOf(points()).map(areaOf).join(" ");
 
 	const bars = () => points().map((p) => el("rect", {
 		x: round(p.left),

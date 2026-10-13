@@ -156,3 +156,44 @@ test("responsive fills the container without distorting strokes", () => {
 	assert.equal(svg.querySelector("line").getAttribute("vector-effect"), "non-scaling-stroke");
 	assert.equal(spark([1, 2]).querySelector("path").hasAttribute("vector-effect"), false, "opt-in");
 });
+
+test("project() skips null / NaN points instead of throwing", () => {
+	const pts = project([1, null, 3, NaN, { y: undefined }, 5]);
+	assert.deepEqual(pts.map((p) => p.index), [0, 2, 5]);
+	pts.forEach((p) => assert.ok(Number.isFinite(p.x) && Number.isFinite(p.y)));
+	assert.deepEqual(project([{ v: 1 }, null, { v: 2 }], { y: "v" }).map((p) => p.index), [0, 2]);
+	// a gap does not drag the y extent to 0: the minimum still sits on the bottom edge
+	assert.equal(project([1, null, 3])[0].y, 58);
+	// …nor does the stack baseline under a gap
+	assert.equal(project([1, null, 3], { stack: [1, -9, 1] })[0].y0, 58);
+});
+
+test("a gap breaks the line into separate segments; extent ignores NaN", () => {
+	const d = spark([1, 2, NaN, 3, 4], { width: 100, height: 50 }).querySelector("path").getAttribute("d");
+	assert.ok(!d.includes("NaN"), d);
+	assert.equal(d.match(/M/g).length, 2, d);
+	// the gap's x slot is kept: the second segment starts at index 3, not index 2
+	const pts = project([1, 2, NaN, 3, 4], { width: 100, height: 50 });
+	assert.equal(pts[2].x, project([1, 2, 0, 3, 4], { width: 100, height: 50 })[3].x);
+});
+
+test("an area with a gap closes one shape per segment", () => {
+	const paths = spark([1, null, 2, 3], { kind: "area" }).querySelectorAll("path");
+	const area = paths[0].getAttribute("d");
+	assert.ok(!area.includes("NaN"), area);
+	assert.equal(area.match(/Z/g).length, 2, area);
+	assert.equal(paths[1].getAttribute("d").match(/M/g).length, 2);
+});
+
+test("bars skip gap points; all-gap data draws nothing", () => {
+	const rects = [...spark([1, null, 3], { kind: "bar" }).querySelectorAll("rect")];
+	assert.equal(rects.length, 2);
+	rects.forEach((r) => assert.ok(!r.getAttribute("y").includes("NaN")));
+	assert.equal(spark([null, NaN], {}).querySelector("path").getAttribute("d"), "");
+});
+
+test("a large series does not overflow the stack", () => {
+	const big = Array.from({ length: 150000 }, (_, i) => Math.sin(i / 100));
+	assert.equal(project(big).length, 150000);
+	assert.ok(spark(big).querySelector("path").getAttribute("d").startsWith("M"));
+});
