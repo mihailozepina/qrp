@@ -39,6 +39,23 @@ export const memoize = (fn, options = {}) => {
 		}
 	};
 
+	// The store may evict on its own (LRU) without telling us, so sweep stamps
+	// whose key is gone once the map outgrows twice its size at the last sweep —
+	// amortised O(1) per call, and bounded by the store's own size.
+	let sweepAt = 16;
+
+	const pruneExpires = () => {
+		if(expires.size <= sweepAt) {
+			return;
+		}
+
+		Array.from(expires.keys())
+			.filter((key) => !store.has(key))
+			.forEach((key) => expires.delete(key));
+
+		sweepAt = Math.max(16, expires.size * 2);
+	};
+
 	// A pending promise has no expiry stamp yet (stamped on resolve), so it reads
 	// as fresh — that's what dedups in-flight calls. A resolved entry expires ttl
 	// ms after it settled.
@@ -69,10 +86,20 @@ export const memoize = (fn, options = {}) => {
 
 		store.set(key, result);
 
+		if(expires) {
+			// a key the store evicted (LRU) may have left an old stamp behind
+			expires.delete(key);
+			pruneExpires();
+		}
+
 		if(result && typeof result.then === "function") {
+			// Only touch the entry if it's still THIS promise — after invalidate()
+			// a newer call may own the key.
+			const current = () => store.has(key) && store.get(key) === result;
+
 			result.then(
-				() => { if(expires) { expires.set(key, Date.now() + ttl); } },
-				() => drop(key)   // don't retain a rejected promise — let it retry
+				() => { if(expires && current()) { expires.set(key, Date.now() + ttl); } },
+				() => { if(current()) { drop(key); } }   // don't retain a rejected promise — let it retry
 			);
 		} else if(expires) {
 			expires.set(key, Date.now() + ttl);

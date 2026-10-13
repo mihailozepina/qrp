@@ -46,6 +46,10 @@ export const loadScript = (url, attrs = {}) => {
 		document.head.appendChild(script);
 	});
 
+	// Callers that only read .ready/.error never attach a handler — don't let a
+	// failed load surface as an unhandledRejection. Awaiting callers still see it.
+	promise.catch(() => {});
+
 	// expose the promise without making the object thenable (await/return would
 	// otherwise auto-unwrap it) or a tracked reactive key
 	Object.defineProperty(status, "promise", { value: promise, enumerable: false });

@@ -12,6 +12,7 @@ import { paginate, pageCount } from "../utils/paginate.js";
 import { limit } from "../utils/limit.js";
 import { debounce, throttle } from "../utils/debounce.js";
 import { validate } from "../utils/validate.js";
+import { loadScript } from "../utils/load-script.js";
 
 // --- lru --------------------------------------------------------------------
 
@@ -87,6 +88,105 @@ test("memoize honors a custom key and LRU max", () => {
 	assert.equal(calls, 4);
 });
 
+test("memoize with max + ttl keeps the expiry map bounded by the LRU", () => {
+	// Track every Map memoize/lru create so we can inspect the internal expiry map.
+	const NativeMap = globalThis.Map;
+	const maps = [];
+
+	globalThis.Map = class extends NativeMap {
+		constructor(...args) {
+			super(...args);
+			maps.push(this);
+		}
+	};
+
+	let fn;
+
+	try {
+		fn = memoize((n) => n * 2, { max: 2, ttl: 60000 });
+	} finally {
+		globalThis.Map = NativeMap;
+	}
+
+	Array.from({ length: 10000 }, (_, i) => fn(i));
+
+	const largest = Math.max(...maps.map((m) => m.size));
+	assert.ok(largest < 100, `internal maps stay bounded (largest: ${largest})`);
+});
+
+test("memoize: an LRU-evicted key does not inherit its old expiry stamp", async () => {
+	let calls = 0;
+	let release;
+	const fn = memoize((k) => {
+		calls++;
+
+		return k === "a" && calls > 1 ? new Promise((r) => { release = r; }) : Promise.resolve(k);
+	}, { max: 1, ttl: 1 });
+
+	await fn("a");                 // a resolves → stamped
+	await new Promise((r) => setTimeout(r, 10)); // a's stamp is now past ttl
+	await fn("b");                 // evicts a from the LRU
+
+	const p1 = fn("a");           // re-run, pending
+	const p2 = fn("a");           // must dedupe — not read a's stale stamp
+
+	assert.equal(p1, p2);
+	assert.equal(calls, 3);
+	release("a");
+	await p1;
+});
+
+test("memoize: a stale in-flight rejection after invalidate() keeps the new entry", async () => {
+	let calls = 0;
+	let rejectFirst;
+	const fn = memoize(() => {
+		calls++;
+
+		return calls === 1 ? new Promise((_, rej) => { rejectFirst = rej; }) : Promise.resolve("ok");
+	});
+
+	const first = fn();
+	fn.invalidate();
+	const second = fn();           // new entry (call 2)
+
+	rejectFirst(new Error("old"));
+	await first.catch(() => {});
+	await Promise.resolve();
+
+	assert.equal(fn(), second, "old rejection must not evict the newer promise");
+	assert.equal(calls, 2);
+});
+
+test("memoize: a stale in-flight resolve after invalidate() doesn't stamp the new entry", async () => {
+	let calls = 0;
+	let resolveFirst;
+	let resolveSecond;
+	const fn = memoize(() => {
+		calls++;
+
+		return new Promise((r) => {
+			if(calls === 1) {
+				resolveFirst = r;
+			} else {
+				resolveSecond = r;
+			}
+		});
+	}, { ttl: 1 });
+
+	const first = fn();
+	fn.invalidate();
+	const second = fn();           // pending — no stamp yet
+
+	resolveFirst("old");
+	await first;
+	await new Promise((r) => setTimeout(r, 10)); // the old stamp, if applied, has expired
+
+	assert.equal(fn(), second, "pending entry must still dedupe");
+	assert.equal(calls, 2);
+	resolveSecond("new");
+	await second;
+});
+
 // --- cacheForever -----------------------------------------------------------
 
 test("cacheForever runs once, even for falsy results", () => {
@@ -132,6 +232,23 @@ test("precacheWithRefresh serves current and swaps on refresh, stop() clears", (
 			});
 		});
 	});
+});
+
+test("precacheWithRefresh ignores an older refresh that resolves after a newer one", async () => {
+	const resolvers = [];
+	const get = precacheWithRefresh(() => new Promise((r) => resolvers.push(r)), 999999);
+
+	resolvers[0]("initial");
+	const slow = get.refresh();   // refresh #1
+	const fast = get.refresh();   // refresh #2
+
+	resolvers[2]("new");
+	await fast;
+	resolvers[1]("old");
+	await slow;
+
+	assert.equal(await get(), "new", "older response must not overwrite newer data");
+	get.stop();
 });
 
 // --- paginate ---------------------------------------------------------------
@@ -354,4 +471,38 @@ test("validate distinguishes absent from empty-string for optional fields", () =
 	const req = { email: { required: true, pattern: /@/ } };
 	assert.equal(validate(req, {}).errors[0].message, "email is required");
 	assert.equal(validate(req, { email: "" }).errors[0].message, "email is required");
+});
+
+test("validate: a /g or /y pattern gives the same answer every call", () => {
+	const schema = { code: { pattern: /^[a-z]+$/g } };
+	const sticky = { code: { pattern: /[a-z]+/y } };
+
+	[1, 2, 3, 4].forEach(() => {
+		assert.deepEqual(validate(schema, { code: "abc" }).errors, []);
+		assert.deepEqual(validate(sticky, { code: "abc" }).errors, []);
+	});
+});
+
+// --- loadScript -------------------------------------------------------------
+
+test("loadScript: a failed load is not an unhandled rejection; awaiting still rejects", async () => {
+	const unhandled = [];
+	const onUnhandled = (reason) => unhandled.push(reason);
+	process.on("unhandledRejection", onUnhandled);
+
+	try {
+		const url = "https://example.test/missing-" + Date.now() + ".js";
+		const status = loadScript(url);
+		const script = Array.from(document.head.querySelectorAll("script")).find((s) => s.src === url);
+
+		script.onerror();
+		await new Promise((r) => setTimeout(r, 20));
+
+		assert.ok(status.error instanceof Error);
+		assert.equal(status.ready, false);
+		assert.deepEqual(unhandled, [], "no unhandledRejection for .ready/.error readers");
+		await assert.rejects(status.promise, /Failed to load script/);
+	} finally {
+		process.off("unhandledRejection", onUnhandled);
+	}
 });

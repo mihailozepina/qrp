@@ -106,6 +106,12 @@ const checkField = (path, rule, value, errors) => {
 		}
 	}
 
+	// a /g or /y regex carries lastIndex between test() calls — reset it so the
+	// same value doesn't alternate pass/fail
+	if(rule.pattern && (rule.pattern.global || rule.pattern.sticky)) {
+		rule.pattern.lastIndex = 0;
+	}
+
 	if(rule.pattern && !rule.pattern.test(String(value))) {
 		errors.push({ path, message: rule.message || `${path} is invalid` });
 	}
