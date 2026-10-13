@@ -65,6 +65,39 @@ test("selectAll selects only the filtered set", () => {
 	assert.equal(grid.allSelected(), true, "all of the filtered set");
 });
 
+test("toggleAll off deselects only the filtered set, keeping hidden selections", () => {
+	const rows = Array.from({ length: 20 }, (_, i) => ({ id: i }));
+	const filter = state({ max: Infinity });
+	const grid = dataGrid(() => rows, {
+		key: (r) => r.id,
+		pageSizes: [],
+		filter,
+		filterFn: (r, f) => r.id <= f.max
+	});
+
+	grid.select(rows[15]);
+	filter.max = 4;                      // row 15 is now filtered out
+
+	grid.toggleAll();
+	assert.equal(grid.allSelected(), true, "on: selects the filtered rows");
+	assert.deepEqual(grid.selectedIds().sort(), ["0", "1", "15", "2", "3", "4"]);
+
+	let runs = 0;
+
+	effect(() => {
+		grid.selectedIds().length;
+		runs += 1;
+	});
+
+	runs = 0;
+	grid.toggleAll();
+	assert.equal(runs, 1, "off is batched");
+	assert.equal(grid.someSelected(), false);
+
+	filter.max = Infinity;
+	assert.deepEqual(grid.selectedIds(), ["15"], "the hidden selection survives");
+});
+
 test("column visibility toggles", () => {
 	const grid = dataGrid(rows, {
 		columns: [{ key: "name" }, { key: "team", hidden: true }],
