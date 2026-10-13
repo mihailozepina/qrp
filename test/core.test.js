@@ -3,7 +3,7 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { state, effect, derive, raw, el, mount, scope, scoped, clear } from "../qrp/index.js";
+import { state, effect, derive, raw, el, mount, scope, scoped, clear, onDispose } from "../qrp/index.js";
 
 test("effect runs once immediately", () => {
 	let runs = 0;
@@ -332,6 +332,100 @@ test("scoped returns the built value and a dispose that tears its effects down",
 	dispose();
 	s.n = 2;
 	assert.equal(runs, 2, "effect disposed — no leak");
+});
+
+test("scoped() called inside a running effect owns its effects and disposers", () => {
+	const s = state({ x: 0 });
+	let runs = 0;
+	let cleaned = 0;
+	let handle;
+
+	effect(() => {
+		handle = scoped(() => {
+			effect(() => { void s.x; runs++; });
+			onDispose(() => { cleaned++; });
+		});
+	});
+
+	assert.equal(runs, 1);
+
+	handle.dispose();
+	assert.equal(cleaned, 1, "the scope's onDispose ran");
+
+	s.x++;
+	assert.equal(runs, 1, "the scope's effect was disposed with it");
+});
+
+test("mount() called inside a running effect disposes its component's effects", () => {
+	const s = state({ x: 0 });
+	const host = document.createElement("div");
+	let runs = 0;
+	let handle;
+
+	effect(() => {
+		handle = mount(host, () => {
+			effect(() => { void s.x; runs++; });
+			return el("span", {}, "hi");
+		});
+	});
+
+	handle.dispose();
+	s.x++;
+
+	assert.equal(runs, 1);
+	assert.equal(host.childNodes.length, 0);
+});
+
+test("a scope created inside an effect is disposed when that effect re-runs or is disposed", () => {
+	const s = state({ x: 0, outer: 0 });
+	let runs = 0;
+	let cleaned = 0;
+
+	const outer = effect(() => {
+		void s.outer;
+		scope(() => {
+			effect(() => { void s.x; runs++; });
+			onDispose(() => { cleaned++; });
+		});
+	});
+
+	assert.equal(runs, 1);
+
+	s.outer++;
+	assert.equal(cleaned, 1, "the previous run's scope was disposed");
+	assert.equal(runs, 2, "the new run built a fresh inner effect");
+
+	s.x++;
+	assert.equal(runs, 3, "only the live inner effect re-runs");
+
+	outer.dispose();
+	assert.equal(cleaned, 2);
+
+	s.x++;
+	assert.equal(runs, 3);
+});
+
+test("a scope inside an effect keeps nested effects owned by their own effect", () => {
+	const s = state({ x: 0, y: 0 });
+	let innerRuns = 0;
+	let handle;
+
+	effect(() => {
+		handle = scoped(() => {
+			effect(() => {
+				void s.x;
+				effect(() => { void s.y; innerRuns++; });
+			});
+		});
+	});
+
+	s.x++;
+	s.y++;
+	assert.equal(innerRuns, 3, "the re-run's grandchild replaced the old one");
+
+	handle.dispose();
+	s.y++;
+	assert.equal(innerRuns, 3);
 });
 
 test("mount appends the component's RETURN value (the docs' () => el(...) style)", () => {
