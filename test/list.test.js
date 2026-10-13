@@ -400,3 +400,93 @@ test("rebind terminates on cyclic objects (depth bound, no stack overflow)", () 
 	assert.doesNotThrow(() => { store.rows = [b]; });
 	assert.equal(view.querySelector("li").textContent, "B");
 });
+
+// --- in-place array mutators ---------------------------------------------------
+
+// A list over a state array must follow EVERY in-place mutator — including the
+// length-preserving ones (sort/reverse/splice-replace/fill/copyWithin) — and
+// re-run exactly once per call, against the final array (never an intermediate
+// state with duplicate keys, as unshift/shift used to produce).
+const renderIds = (ids) => {
+	const store = state({ xs: ids.map((id) => ({ id })) });
+	let runs = 0;
+	const errors = [];
+	const original = console.error;
+	console.error = (message) => errors.push(message);
+	const view = el("ul", {}, list(() => {
+		runs++;
+
+		return store.xs;
+	}, (x) => x.id, (x) => el("li", {}, String(x.id))));
+	const text = () => [...view.querySelectorAll("li")].map((li) => li.textContent).join(",");
+	const mutate = (fn) => {
+		const before = runs;
+		fn(store.xs);
+
+		return runs - before;
+	};
+	const restore = () => {
+		console.error = original;
+	};
+
+	return { store, text, mutate, errors, restore };
+};
+
+[
+	["sort", [3, 1, 2], (xs) => xs.sort((a, b) => a.id - b.id), "1,2,3"],
+	["reverse", [1, 2, 3], (xs) => xs.reverse(), "3,2,1"],
+	["splice (replace, same length)", [1, 2, 3], (xs) => xs.splice(1, 1, { id: 9 }), "1,9,3"],
+	["splice (insert)", [1, 2, 3], (xs) => xs.splice(1, 0, { id: 8 }, { id: 9 }), "1,8,9,2,3"],
+	["unshift", [1, 2, 3], (xs) => xs.unshift({ id: 0 }), "0,1,2,3"],
+	["shift", [1, 2, 3], (xs) => xs.shift(), "2,3"],
+	["push", [1, 2], (xs) => xs.push({ id: 3 }, { id: 4 }), "1,2,3,4"],
+	["pop", [1, 2, 3], (xs) => xs.pop(), "1,2"],
+	["splice (replace all, keeping some)", [1, 2, 3, 4], (xs) => xs.splice(0, 4, xs[2], xs[3], { id: 5 }, { id: 6 }), "3,4,5,6"],
+	["direct index write", [1, 2, 3], (xs) => {
+		xs[0] = { id: 7 };
+	}, "7,2,3"]
+].forEach(([name, ids, fn, expected]) => {
+	test(`list follows in-place ${name}, re-running once, with no duplicate-key error`, () => {
+		const { text, mutate, errors, restore } = renderIds(ids);
+
+		try {
+			const runs = mutate(fn);
+			assert.equal(text(), expected);
+			assert.equal(runs, 1);
+			assert.deepEqual(errors, []);
+		} finally {
+			restore();
+		}
+	});
+});
+
+test("list follows fill() and copyWithin() over a state array", () => {
+	const store = state({ xs: [1, 2, 3, 4] });
+	let runs = 0;
+	const view = el("ul", {}, list(() => {
+		runs++;
+
+		return store.xs;
+	}, (x, i) => `${i}:${x}`, (x) => el("li", {}, String(x))));
+	const text = () => [...view.querySelectorAll("li")].map((li) => li.textContent).join(",");
+
+	store.xs.copyWithin(0, 2);
+	assert.equal(text(), "3,4,3,4");
+	assert.equal(runs, 2);
+
+	store.xs.fill(0, 1, 3);
+	assert.equal(text(), "3,0,0,4");
+	assert.equal(runs, 3);
+});
+
+test("a sort comparator reading items through the proxy works, and survivors are reused", () => {
+	const store = state({ xs: [{ id: 3, n: "c" }, { id: 1, n: "a" }, { id: 2, n: "b" }] });
+	const view = el("ul", {}, list(() => store.xs, (x) => x.id, (x) => el("li", {}, () => x.n)));
+	const before = [...view.querySelectorAll("li")];
+
+	store.xs.sort((a, b) => a.n.localeCompare(b.n));
+
+	const after = [...view.querySelectorAll("li")];
+	assert.deepEqual(after.map((li) => li.textContent), ["a", "b", "c"]);
+	assert.deepEqual([after[2], after[0], after[1]], before); // same elements, moved
+});
