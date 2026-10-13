@@ -6,6 +6,10 @@ find out by reading a diff. Newest first.
 
 ## Unreleased
 
+_(nothing yet)_
+
+## 0.13.0
+
 A batch of community fixes (thanks @mihailozepina, #1–#27).
 
 - ⚠️ **BREAKING (`export`): `toCSV` guards against CSV/formula injection by
