@@ -96,3 +96,24 @@ test("collection.items drives a keyed list reactively", () => {
 	filter.q = "o"; // bob, carol
 	assert.deepEqual([...ul.querySelectorAll("li")].map((li) => li.textContent), ["bob", "carol"]);
 });
+
+test("pageIndex() is the clamped page items() actually shows", () => {
+	const source = state({ items: Array.from({ length: 100 }, (_u, i) => ({ id: i })) });
+	const filter = state({ max: 100 });
+	const page = state({ index: 9, size: 10 });
+	const view = collection(() => source.items, { page, filter, filterFn: (r, f) => r.id < f.max });
+
+	assert.equal(view.pageIndex(), 9);
+
+	filter.max = 25;   // 3 pages left while parked on page 9
+	assert.equal(view.pageIndex(), 2);
+	assert.equal(view.items()[0].id, 20);
+	assert.equal(page.index, 9, "the raw index is left alone (widening the filter restores it)");
+
+	filter.max = 0;
+	assert.equal(view.pageIndex(), 0, "empty set → page 0");
+
+	page.index = -3;
+	filter.max = 100;
+	assert.equal(view.pageIndex(), 0, "negative index clamps to 0");
+});

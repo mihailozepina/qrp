@@ -523,3 +523,33 @@ test("attrs: an attribute the hook stops returning is removed", () => {
 	flag.on = false;
 	assert.equal(tr.hasAttribute("data-x"), false);
 });
+
+test("tableSummary + tablePager use the clamped page after a filter shrinks the set", () => {
+	const store = state({ rows: Array.from({ length: 100 }, (_u, i) => ({ id: i + 1 })) });
+	const filter = state({ max: 100 });
+	const page = state({ index: 9, size: 10 });
+	const t = table({
+		rows: () => store.rows,
+		key: (r) => r.id,
+		page,
+		filter,
+		filterFn: (r, f) => r.id <= f.max,
+		fields: [{ key: "id" }]
+	});
+	const summary = el("div", {}, tableSummary(t.view));
+	const pager = el("div", {}, tablePager(t.view));
+	const btns = () => [...pager.querySelectorAll("button")];
+	const btn = (text) => btns().find((b) => b.textContent === text);
+
+	assert.equal(summary.textContent, "Showing 91–100 of 100");
+
+	filter.max = 25;   // 3 pages, still parked on index 9
+	assert.equal(summary.textContent, "Showing 21–25 of 25");
+	assert.equal(btn("3").getAttribute("aria-current"), "page", "last page is the active one");
+	assert.equal(btn("›").disabled, true, "next disabled on the (clamped) last page");
+	assert.equal(t.querySelector("tbody td").textContent, "21");
+
+	btn("‹").click();
+	assert.equal(page.index, 1, "prev moves to the page before the one shown");
+	assert.equal(summary.textContent, "Showing 11–20 of 25");
+});

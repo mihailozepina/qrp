@@ -16,6 +16,7 @@
  *   el("tbody", {}, list(view.items, r => r.id, r => el("tr", {}, ...)));
  *   view.total();      // rows after filtering (before paging)
  *   view.pageCount();  // pages at the current size
+ *   view.pageIndex();  // the page shown (page.index clamped into range)
  *   view.toggleSort("name");
  */
 
@@ -31,7 +32,7 @@ import { state } from "../qrp/index.js";
  * @param {Function} [options.filterFn] (item, filterState) => boolean
  * @param {Function} [options.compare] (a, b, sortState) => number (custom sort)
  * @returns {object} { sort, filter, page, items, filtered, total, pageCount,
- *   toggleSort }
+ *   pageIndex, toggleSort }
  */
 export const collection = (source, options = {}) => {
 	// state() is idempotent on an existing proxy, so a caller who passes
@@ -76,6 +77,18 @@ export const collection = (source, options = {}) => {
 		});
 	};
 
+	// The page actually shown: page.index clamped into range, so a filter that
+	// shrinks the set below the current page doesn't render a blank table with
+	// a phantom page. page.index itself is left alone (widening the filter
+	// again returns to it); pagers/summaries read pageIndex(), not the raw index.
+	const clampIndex = (length) => {
+		const last = Math.max(0, Math.ceil(length / page.size) - 1);
+
+		return Math.min(Math.max(0, page.index || 0), last);
+	};
+
+	const pageIndex = () => (page.size ? clampIndex(filtered().length) : 0);
+
 	return {
 		sort,
 		filter,
@@ -89,11 +102,7 @@ export const collection = (source, options = {}) => {
 				return all;
 			}
 
-			// Clamp the page into range so a filter that shrinks the set below
-			// the current page doesn't render a blank table with a phantom page.
-			const pages = Math.max(1, Math.ceil(all.length / page.size));
-			const index = Math.min(Math.max(0, page.index), pages - 1);
-			const start = index * page.size;
+			const start = clampIndex(all.length) * page.size;
 
 			return all.slice(start, start + page.size);
 		},
@@ -105,6 +114,8 @@ export const collection = (source, options = {}) => {
 		total: () => filtered().length,
 
 		pageCount: () => (page.size ? Math.ceil(filtered().length / page.size) : 1),
+
+		pageIndex,
 
 		// Click a column header: toggle direction if same key, else sort ascending.
 		toggleSort: (key) => {
