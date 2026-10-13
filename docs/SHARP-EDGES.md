@@ -160,11 +160,15 @@ entries.** There's no object-keyed variant — map the object to pairs and key o
 the pair's key:
 
 ```js
-list(() => Object.entries(byMetric), ([key]) => key, ([key, points]) => row(key, points));
+list(() => Object.entries(byMetric), ([key]) => key, (entry) => row(entry[0], () => entry[1]));
 ```
 
 That gives you keyed reuse over `{ [k]: v }` data (add/remove a key → add/remove
 one row) instead of a function-child that rebuilds the whole subtree on any change.
+Read the value **through the item** (`() => entry[1]`), don't destructure it in the
+render callback: a surviving key keeps its row and rebinds the item in place, so
+`([key, points]) => row(key, points)` captures `points` once and the row keeps
+showing the old value after `byMetric.cpu = 2`.
 
 **SVG works, and it's namespace-aware.** `el("svg", …)` / `el("path", …)` /
 `el("circle", …)` are created in the SVG namespace (so they actually render), and
