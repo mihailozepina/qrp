@@ -124,14 +124,20 @@ registerInput("select", (settings, key, field = {}) => {
 	);
 });
 
+// Radio group names must be unique per rendered group: the factory only sees
+// the leaf key, so dotted fields "a.mode" and "b.mode" would otherwise share
+// name="mode" and checking one group would uncheck the other.
+let radioSeq = 0;
+
 registerInput("radio", (settings, key, field = {}) => {
 	const options = field.options || {};
+	const name = `qrp-radio${++radioSeq}-${key}`;
 
 	return el("div", { class: "radio-group" },
 		Object.entries(options).map(([value, label]) => {
 			const input = el("input", {
 				type: "radio",
-				name: key,
+				name,
 				value,
 				checked: () => String(settings[key]) === value,
 				onchange: () => { settings[key] = value; }
@@ -200,8 +206,14 @@ let fieldSeq = 0;
  * Resolve a (possibly dotted) key to the object that holds the leaf and the leaf
  * name — creating intermediate plain objects through the proxy so nested fields
  * ("dynamics.pattern.switch") bind reactively. `a.b` → { target: settings.a, leaf: "b" }.
+ * An existing own key wins over splitting, so a flat "server.port" (as parseKV
+ * produces) binds to itself instead of a freshly created settings.server.
  */
 const resolveTarget = (settings, key) => {
+	if(Object.prototype.hasOwnProperty.call(settings, key)) {
+		return { target: settings, leaf: key };
+	}
+
 	const parts = String(key).split(".");
 	let target = settings;
 
