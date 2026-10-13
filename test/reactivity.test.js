@@ -424,3 +424,65 @@ test("batch: an effect cycle in the flush still trips the runaway guard", () => 
 	assert.throws(() => batch(() => { s.go = true; }), /re-entered/);
 	off();
 });
+
+// --- array length shrink, `in` on new undefined keys, dep dedupe -------------
+
+test("shrinking arr.length re-runs effects reading removed indices", () => {
+	const s = state({ rows: [{ n: 1 }, { n: 2 }, { n: 3 }] });
+
+	let first;
+	effect(() => { first = s.rows[0]?.n; });
+	assert.equal(first, 1);
+
+	s.rows.length = 0;
+	assert.equal(first, undefined);
+});
+
+test("shrinking arr.length re-runs iterating effects", () => {
+	const s = state({ rows: [1, 2, 3] });
+
+	let keys;
+	effect(() => { keys = Object.keys(s.rows); });
+	assert.deepEqual(keys, ["0", "1", "2"]);
+
+	s.rows.length = 1;
+	assert.deepEqual(keys, ["0"]);
+});
+
+test("shrinking arr.length leaves effects on surviving indices alone", () => {
+	const s = state({ rows: [1, 2, 3] });
+
+	let runs = 0;
+	effect(() => { s.rows[0]; runs += 1; });
+
+	s.rows.length = 2;
+	assert.equal(runs, 1);
+});
+
+test("`in` updates when a new key is set to undefined", () => {
+	const s = state({});
+
+	let has;
+	effect(() => { has = "x" in s; });
+	assert.equal(has, false);
+
+	s.x = undefined;
+	assert.equal(has, true);
+});
+
+test("repeated reads of the same key don't grow an effect's deps", () => {
+	const s = state({ a: 1, b: 2, c: 3 });
+
+	let sum = 0;
+	const runner = effect(() => {
+		sum = 0;
+		Array.from({ length: 1000 }).forEach(() => { sum += s.a + s.b + s.c; });
+	});
+
+	assert.equal(sum, 6000);
+	assert.equal(runner.deps.length, 3);
+
+	s.b = 3;
+	assert.equal(sum, 7000);
+	assert.equal(runner.deps.length, 3);
+});

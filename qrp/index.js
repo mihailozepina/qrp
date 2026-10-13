@@ -65,6 +65,12 @@ const track = (target, key) => {
 		depsMap.set(key, dep);
 	}
 
+	// Already subscribed this run (a repeated read, e.g. in a loop): the dep
+	// is in runner.deps, so don't push a duplicate entry.
+	if(dep.has(activeEffect)) {
+		return;
+	}
+
 	dep.add(activeEffect);
 	activeEffect.deps.push(dep);
 };
@@ -251,7 +257,9 @@ export const state = (obj) => {
 			const result = Reflect.set(target, key, next, receiver);
 
 			// Object.is so writing NaN over NaN does not spuriously re-trigger.
-			if(!Object.is(old, next)) {
+			// A NEW key always fires, even when set to undefined: `key in obj`
+			// readers track the key and must see it appear.
+			if(isNew || !Object.is(old, next)) {
 				trigger(target, key);
 			}
 
@@ -267,6 +275,15 @@ export const state = (obj) => {
 			// length explicitly when it actually changed.
 			if(wasArray && key !== "length" && target.length !== oldLength) {
 				trigger(target, "length");
+			}
+
+			// Truncating via `arr.length = n` deletes indices n..oldLength-1 with
+			// no per-index trap, so readers of those indices and iterators
+			// (Object.keys, spread) must be told explicitly.
+			if(wasArray && key === "length" && target.length < oldLength) {
+				Array.from({ length: oldLength - target.length }, (_, i) => String(target.length + i))
+					.forEach(index => trigger(target, index));
+				trigger(target, ITERATE);
 			}
 
 			return result;
