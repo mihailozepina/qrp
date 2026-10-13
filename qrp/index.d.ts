@@ -210,13 +210,16 @@ export function scoped<T>(fn: () => T): { value: T; dispose: () => void };
  * - **`on*: fn`** → an event listener (`addEventListener`):
  *   `el("button", { onclick: (e) => count.n++ })`.
  * - **`bind: [state, key]`** → two-way binding for a form control (with
- *   number/checkbox coercion): `el("input", { bind: [settings, "name"] })`.
+ *   number/checkbox coercion; applied after the other props, so `type` is set
+ *   first): `el("input", { bind: [settings, "name"] })`.
  * - **`class` / `style`** → `class` takes a string or function; `style` takes a
- *   string or an object (`{ color: "red" }`), each static or reactive.
+ *   string or an object (`{ color: "red", "--w": "10px" }` — custom properties
+ *   go through `setProperty`), each static or reactive.
  * - Properties like **`value` / `checked`** are set as node *properties* (not
  *   attributes), so `checked: () => todo.done` works as expected. A prop whose
- *   value is `false` or `null` **removes** the attribute (so `disabled: () => x`
- *   toggles it), and `true` sets it empty.
+ *   value is `false`, `null` or `undefined` **removes** the attribute (so
+ *   `disabled: () => x` toggles it, `class: () => on && "active"` drops the
+ *   class), and `true` sets it empty. `value: null` empties an input.
  * - **SVG is namespace-aware**: `el("svg", …)`, `el("path", …)`, etc. are created
  *   in the SVG namespace and their attributes (`d`, `viewBox`, `fill`, `class`)
  *   go through `setAttribute`. (`a`/`title`/`script`/`style` stay HTML — build an

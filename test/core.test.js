@@ -349,3 +349,67 @@ test("mount does NOT double-append when the component appends to its view", () =
 	mount(parent, (view) => view.appendChild(el("p", {}, "once")));   // returns the appended node
 	assert.equal(parent.querySelectorAll("p").length, 1, "not doubled");
 });
+
+test("el(): null/undefined/false on a DOM property removes the attribute", () => {
+	const a = el("a", { href: null, title: null, id: undefined, class: false });
+
+	assert.equal(a.hasAttribute("href"), false);
+	assert.equal(a.hasAttribute("title"), false);
+	assert.equal(a.hasAttribute("id"), false);
+	assert.equal(a.hasAttribute("class"), false);
+});
+
+test("el(): a reactive prop going falsy removes the attribute it set", () => {
+	const s = state({ on: true, href: "/x" });
+	const a = el("a", { class: () => s.on && "active", href: () => s.href });
+
+	assert.equal(a.getAttribute("class"), "active");
+	assert.equal(a.getAttribute("href"), "/x");
+
+	s.on = false;
+	s.href = null;
+
+	assert.equal(a.hasAttribute("class"), false);
+	assert.equal(a.hasAttribute("href"), false);
+});
+
+test("el(): boolean props still take false; value null becomes empty", () => {
+	const s = state({ on: true });
+	const input = el("input", { disabled: () => s.on, checked: () => s.on, hidden: () => s.on, value: null });
+
+	assert.equal(input.disabled, true);
+	assert.equal(input.checked, true);
+	assert.equal(input.hidden, true);
+	assert.equal(input.value, "");
+
+	s.on = false;
+
+	assert.equal(input.disabled, false);
+	assert.equal(input.checked, false);
+	assert.equal(input.hidden, false);
+	assert.equal(input.hasAttribute("disabled"), false);
+});
+
+test("el(): bind applies after other props, so type is set first", () => {
+	const s = state({ ok: true });
+	const box = el("input", { bind: [s, "ok"], type: "checkbox" });
+
+	assert.equal(box.checked, true);
+
+	box.checked = false;
+	box.dispatchEvent(new Event("change"));
+
+	assert.equal(s.ok, false);
+});
+
+test("el(): style object sets CSS custom properties", () => {
+	const s = state({ w: "10px" });
+	const div = el("div", { style: () => ({ "--w": s.w, color: "red" }) });
+
+	assert.equal(div.style.getPropertyValue("--w"), "10px");
+	assert.equal(div.style.color, "red");
+
+	s.w = "20px";
+
+	assert.equal(div.style.getPropertyValue("--w"), "20px");
+});
