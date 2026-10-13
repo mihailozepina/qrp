@@ -666,32 +666,71 @@ const createEl = (tag) => (
 	SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag)
 );
 
+// A DOM property set to null/undefined/false: assigning it would stringify
+// ("null", "false") on string props, so boolean props get false, string props
+// are emptied (value/textContent become ""), and the backing attribute goes.
+const clearProp = (node, key) => {
+	const current = node[key];
+
+	if(typeof current === "boolean") {
+		node[key] = false;
+		return;
+	}
+
+	if(current === null) {
+		// on* handler props (onclick = null) and other nullable props.
+		node[key] = null;
+		return;
+	}
+
+	if(typeof current === "string") {
+		node[key] = "";
+	}
+
+	node.removeAttribute(key);
+};
+
 const setAttr = (node, key, value) => {
 	// SVG attributes (class, d, cx, viewBox, fill, …) aren't settable as
 	// properties and `className` is a read-only SVGAnimatedString, so route
 	// everything through setAttribute for SVG-namespaced nodes.
 	const isSvg = node.namespaceURI === SVG_NS;
 
+	const isEmpty = value == null || value === false;
+
 	if(key === "class") {
-		if(isSvg) {
-			if(value == null) { node.removeAttribute("class"); } else { node.setAttribute("class", value); }
+		if(isEmpty) {
+			node.removeAttribute("class");
+		} else if(isSvg) {
+			node.setAttribute("class", value);
 		} else {
-			node.className = value == null ? "" : value;
+			node.className = value;
 		}
 		return;
 	}
 
-	if(key === "style" && typeof value === "object") {
-		Object.assign(node.style, value);
+	if(key === "style" && value && typeof value === "object") {
+		// Custom properties ("--w") aren't style fields — only setProperty sets them.
+		Object.entries(value).forEach(([name, v]) => {
+			if(name.startsWith("--")) {
+				node.style.setProperty(name, v);
+			} else {
+				node.style[name] = v;
+			}
+		});
 		return;
 	}
 
 	if(!isSvg && key in node) {
-		node[key] = value;
+		if(isEmpty) {
+			clearProp(node, key);
+		} else {
+			node[key] = value;
+		}
 		return;
 	}
 
-	if(value == null || value === false) {
+	if(isEmpty) {
 		node.removeAttribute(key);
 	} else {
 		node.setAttribute(key, value === true ? "" : value);
@@ -1354,8 +1393,8 @@ export const el = (tag, props = {}, ...children) => {
 	children.forEach(child => appendChild(node, child));
 
 	Object.entries(props).forEach(([key, value]) => {
+		// bind runs LAST (below): it reads node.type, so `type` must be set first.
 		if(key === "bind") {
-			bind(node, value[0], value[1]);
 			return;
 		}
 
@@ -1371,6 +1410,10 @@ export const el = (tag, props = {}, ...children) => {
 
 		setAttr(node, key, value);
 	});
+
+	if(props.bind) {
+		bind(node, props.bind[0], props.bind[1]);
+	}
 
 	return node;
 };
