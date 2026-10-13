@@ -376,6 +376,41 @@ test("busyWhile tracks in-flight promises reactively", () => {
 	});
 });
 
+test("busyWhile.run() inside an effect doesn't subscribe it to the counter", async () => {
+	const b = busyWhile();
+	const f = state({ q: 1 });
+	let runs = 0;
+
+	const stop = effect(() => {
+		void f.q;
+		runs += 1;
+		b.run(new Promise((r) => setTimeout(r, 5)));
+	});
+
+	try {
+		await new Promise((r) => setTimeout(r, 30));
+		assert.equal(runs, 1, "run() must not re-trigger its caller");
+
+		f.q = 2;
+		assert.equal(runs, 2, "the effect still reacts to its own deps");
+	} finally {
+		stop();
+	}
+
+	await new Promise((r) => setTimeout(r, 10));
+	assert.equal(b.state.pending, 0);
+});
+
+test("busyWhile counter stays reactive for outside readers", async () => {
+	const b = busyWhile();
+	const seen = [];
+	const stop = effect(() => { seen.push(b.active); });
+
+	await b.run(Promise.resolve());
+	assert.deepEqual(seen, [false, true, false]);
+	stop();
+});
+
 // --- scope auto-registration (dispose() cleans up behaviors too) ------------
 
 test("behaviors built inside scoped() are torn down by dispose() alone", () => {
