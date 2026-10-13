@@ -208,7 +208,7 @@ directly only when you're managing effects **without** a DOM subtree to clear
 ### `scoped`
 
 ```ts
-scoped<T>(fn: () => T): { value: T
+scoped<T>(fn: () => T): { value: T; dispose: () => void }
 ```
 
 Build a value in a fresh ownership scope; returns `{ value, dispose }`. Use for
@@ -942,6 +942,7 @@ type TableElement<T> = HTMLTableElement & {
 	expanded: Record<string, boolean>;
 	/** Toggle a row's detail panel by its key. */
 	toggleRow: (key: unknown) => void;
+};
 ```
 
 The table element: `.view` (the collection), plus expansion controls.
@@ -1353,7 +1354,7 @@ Copy text to the clipboard; returns the clipboard promise.
 ```ts
 type ExportColumn =
 	| string
-	| { key: string; label?: string; value?: (row: any) => unknown;
+	| { key: string; label?: string; value?: (row: any) => unknown; accessor?: (row: any) => unknown };
 ```
 
 
@@ -1848,7 +1849,7 @@ Reactive tab visibility: { visible }.
 ### `poll`
 
 ```ts
-poll(fn: () => void, ms: number, options?: { immediate?: boolean; whenHidden?: boolean }): { start: () => void
+poll(fn: () => void, ms: number, options?: { immediate?: boolean; whenHidden?: boolean }): { start: () => void; stop: () => void }
 ```
 
 Call `fn` every `ms`, scope-aware: cleared on dispose, and paused while the tab
@@ -2307,6 +2308,7 @@ interface LruStore<K = any, V = any> {
 type Memoized<F extends (...args: any[]) => any> = F & {
 	/** Clear one entry (by the same args) or the whole cache (no args). */
 	invalidate(...args: Parameters<F>): void;
+};
 ```
 
 A memoized function with imperative cache invalidation.
