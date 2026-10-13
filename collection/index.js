@@ -21,6 +21,44 @@
 
 import { state } from "../qrp/index.js";
 
+// Dates compare by timestamp; NaN (incl. an invalid Date) counts as missing.
+const comparable = (value) => (value instanceof Date ? value.getTime() : value);
+const isMissing = (value) => value === null || value === undefined || Number.isNaN(value);
+
+/**
+ * The default sort comparator (also used by table()). A consistent total
+ * order, unlike `a > b ? 1 : -1`, which breaks Array#sort on null/undefined
+ * or mixed types and scatters real values out of order:
+ * missing (null/undefined/NaN) always sorts last whatever the direction,
+ * numbers and Dates compare numerically, everything else by natural-order
+ * string comparison (`"item 2"` before `"item 10"`).
+ *
+ * @param {*} a
+ * @param {*} b
+ * @param {number} [dir] 1 ascending (default), -1 descending
+ * @returns {number}
+ */
+export const compareValues = (a, b, dir = 1) => {
+	const av = comparable(a);
+	const bv = comparable(b);
+	const aMissing = isMissing(av);
+	const bMissing = isMissing(bv);
+
+	if(aMissing || bMissing) {
+		return Number(aMissing) - Number(bMissing);
+	}
+
+	if(av === bv) {
+		return 0;
+	}
+
+	const order = typeof av === "number" && typeof bv === "number"
+		? av - bv
+		: String(av).localeCompare(String(bv), undefined, { numeric: true });
+
+	return order * (dir || 1);
+};
+
 /**
  * @param {Function} source () => Array (reactive)
  * @param {object} [options]
@@ -67,13 +105,7 @@ export const collection = (source, options = {}) => {
 		const key = sort.key;
 		const dir = sort.dir || 1;
 
-		return [...items].sort((a, b) => {
-			if(a[key] === b[key]) {
-				return 0;
-			}
-
-			return (a[key] > b[key] ? 1 : -1) * dir;
-		});
+		return [...items].sort((a, b) => compareValues(a[key], b[key], dir));
 	};
 
 	return {
