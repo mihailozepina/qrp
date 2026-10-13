@@ -3,7 +3,7 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { state, el, when, list, mount, effect, scope, onDispose } from "../qrp/index.js";
+import { state, el, when, list, mount, effect, scope, onDispose, clear } from "../qrp/index.js";
 
 test("when renders the then branch and swaps to else on flip", () => {
 	const s = state({ on: true });
@@ -247,4 +247,15 @@ test("a marker coerced to a string (bare DOM append) self-diagnoses instead of [
 	} finally {
 		console.error = orig;
 	}
+});
+
+test("when does not crash after its container is cleared", () => {
+	const s = state({ on: true });
+	const host = el("div", {}, when(() => s.on, () => el("b"), () => el("i")));
+
+	clear(host);
+
+	assert.doesNotThrow(() => { s.on = false; });
+	assert.doesNotThrow(() => { s.on = true; });
+	assert.equal(host.childNodes.length, 0);
 });
