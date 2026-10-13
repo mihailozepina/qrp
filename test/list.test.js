@@ -3,7 +3,7 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { state, effect, el, mount, list, untracked, clear } from "../qrp/index.js";
+import { state, effect, el, mount, list, when, untracked, clear } from "../qrp/index.js";
 
 // --- untracked --------------------------------------------------------------
 
@@ -499,4 +499,111 @@ test("a sort comparator reading items through the proxy works, and survivors are
 	const after = [...view.querySelectorAll("li")];
 	assert.deepEqual(after.map((li) => li.textContent), ["a", "b", "c"]);
 	assert.deepEqual([after[2], after[0], after[1]], before); // same elements, moved
+});
+
+// --- multi-node rows ----------------------------------------------------------
+
+const texts = (ul) => [...ul.querySelectorAll("li")].map((li) => li.textContent);
+
+test("a row whose render returns when() survives branch flips", () => {
+	const s = state({ items: [{ id: 1 }], on: true });
+	const ul = el("ul", {}, list(() => s.items, (i) => i.id, () => when(() => s.on, () => el("li", {}, "yes"), () => el("li", {}, "no"))));
+
+	assert.deepEqual(texts(ul), ["yes"]);
+
+	s.on = false;
+	assert.deepEqual(texts(ul), ["no"]);
+
+	s.on = true;
+	assert.deepEqual(texts(ul), ["yes"]);
+});
+
+test("when() rows reorder and remove as a group, including post-flip DOM", () => {
+	const s = state({ items: [{ id: 1, n: "a" }, { id: 2, n: "b" }, { id: 3, n: "c" }], on: false });
+	const ul = el("ul", {}, list(() => s.items, (i) => i.id, (i) => when(() => s.on, () => el("li", {}, () => `${i.n}!`))));
+
+	// empty branch — each row is only a comment
+	assert.deepEqual(texts(ul), []);
+
+	s.on = true;
+	assert.deepEqual(texts(ul), ["a!", "b!", "c!"]);
+
+	s.items = [s.items[2], s.items[0], s.items[1]];
+	assert.deepEqual(texts(ul), ["c!", "a!", "b!"]);
+
+	s.items = [s.items[0], s.items[2]];
+	assert.deepEqual(texts(ul), ["c!", "b!"]);
+
+	s.items = [];
+	assert.equal(ul.childNodes.length, 1, "only the list anchor is left");
+});
+
+test("a row rendering an array (several nodes) keeps, moves and removes all of them", () => {
+	const s = state({ items: [{ id: 1 }, { id: 2 }] });
+	const ul = el("ul", {}, list(() => s.items, (i) => i.id, (i) => [el("li", {}, `${i.id}x`), el("li", {}, `${i.id}y`)]));
+
+	assert.deepEqual(texts(ul), ["1x", "1y", "2x", "2y"]);
+
+	s.items = [s.items[1], s.items[0]];
+	assert.deepEqual(texts(ul), ["2x", "2y", "1x", "1y"]);
+
+	s.items = [s.items[1]];
+	assert.deepEqual(texts(ul), ["1x", "1y"]);
+});
+
+test("unmounting a list of when() rows removes every row node", () => {
+	const s = state({ items: [{ id: 1 }, { id: 2 }], on: true });
+	const host = document.createElement("div");
+
+	const handle = mount(host, () => el("ul", {}, list(() => s.items, (i) => i.id, () => when(() => s.on, () => el("li", {}, "yes"), () => el("li", {}, "no")))));
+
+	s.on = false;
+	const ul = host.querySelector("ul");
+	assert.deepEqual(texts(ul), ["no", "no"]);
+
+	handle.dispose();
+	s.on = true;
+	assert.equal(ul.childNodes.length, 0, "rows, their branches and the anchor are gone");
+});
+
+test("itemFor resolves nodes inside multi-node rows, even after a branch flip", () => {
+	const s = state({ items: [{ id: 1 }, { id: 2 }], on: true });
+	const l = list(() => s.items, (i) => i.id, (i) => [el("li", {}, `${i.id}x`), when(() => s.on, () => el("li", {}, el("b", {}, `${i.id}y`)))]);
+	const ul = el("ul", {}, l, el("li", {}, "after"));
+
+	const bold = () => [...ul.querySelectorAll("b")];
+
+	assert.equal(l.itemFor(ul.querySelectorAll("li")[0]).id, 1);
+	assert.equal(l.itemFor(bold()[1]).id, 2);
+
+	s.on = false;
+	s.on = true;
+	assert.equal(l.itemFor({ target: bold()[0] }).id, 1);
+	assert.equal(l.itemFor(bold()[1]).id, 2);
+
+	const after = [...ul.querySelectorAll("li")].find((li) => li.textContent === "after");
+	assert.equal(l.itemFor(after), undefined, "a node after the list isn't a row");
+});
+
+test("single-element rows add no extra nodes (fast path)", () => {
+	const { ul } = render();
+
+	assert.equal(ul.childNodes.length, 4, "3 rows + the list anchor");
+});
+
+test("a row rendering a nested list() keeps its inner rows through outer reorders", () => {
+	const s = state({ groups: [{ id: "a", xs: [1, 2] }, { id: "b", xs: [3] }] });
+	const ul = el("ul", {}, list(() => s.groups, (g) => g.id, (g) => list(() => g.xs, (x) => x, (x) => el("li", {}, `${g.id}${x}`))));
+
+	assert.deepEqual(texts(ul), ["a1", "a2", "b3"]);
+
+	s.groups[1].xs.push(4);
+	s.groups = [s.groups[1], s.groups[0]];
+	assert.deepEqual(texts(ul), ["b3", "b4", "a1", "a2"]);
+
+	s.groups[1].xs = [0, ...s.groups[1].xs];
+	assert.deepEqual(texts(ul), ["b3", "b4", "a0", "a1", "a2"]);
+
+	s.groups = [s.groups[1]];
+	assert.deepEqual(texts(ul), ["a0", "a1", "a2"]);
 });

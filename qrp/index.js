@@ -699,6 +699,7 @@ const setAttr = (node, key, value) => {
 };
 
 const TEXT_NODE = 3;
+const COMMENT_NODE = 8;
 
 /**
  * The renderable protocol. Any object with a `[renderable](parent)` method
@@ -1029,24 +1030,80 @@ const reconcileItem = (targetProxy, source, depth) => {
 	});
 };
 
+// A row's DOM is the sibling range first..last. The common row is one element
+// (first === last). A row that renders several nodes, an array, or a
+// when()/renderable gets a "qrp-row" start comment as `first`; `last` is the
+// final node it rendered — a nested marker only ever inserts BEFORE its own
+// anchor, so content it swaps in later stays inside the range.
+const rowNodes = (entry) => {
+	if(entry.first === entry.last) {
+		return [entry.first];
+	}
+
+	const nodes = [entry.first];
+
+	// The range is only walkable while it's intact; never run past the row.
+	if(entry.last.parentNode !== entry.first.parentNode) {
+		return nodes;
+	}
+
+	let node = entry.first;
+
+	while(node !== entry.last && node.nextSibling) {
+		node = node.nextSibling;
+		nodes.push(node);
+	}
+
+	return nodes;
+};
+
+const moveRow = (entry, ref) => {
+	if(entry.first === entry.last) {
+		ref.parentNode.insertBefore(entry.first, ref);
+
+		return;
+	}
+
+	rowNodes(entry).forEach((node) => ref.parentNode.insertBefore(node, ref));
+};
+
+// Collect the range BEFORE disposing: a nested marker's onDispose removes its
+// own anchor (often `last`), which would make the range unwalkable after.
+const removeRow = (entry) => {
+	const nodes = rowNodes(entry);
+
+	entry.scope.dispose();
+	nodes.forEach((node) => node.remove());
+};
+
 const setupList = (parent, marker) => {
 	const anchor = document.createComment("qrp-list");
 	parent.appendChild(anchor);
+	marker._ends.add(anchor);
 
-	// key -> { element, scope }; scope owns the row's effects for disposal.
+	// key -> { first, last, scope }; scope owns the row's effects for disposal.
 	let cache = new Map();
 
 	// Dispose every row scope when the enclosing owner tears down — AND remove
 	// this list's own rows + anchor, so a list nested in a parent marker doesn't
 	// strand rows the parent never tracked (same fix as setupWhen).
 	onDispose(() => {
-		cache.forEach((entry) => {
-			entry.scope.dispose();
-			entry.element.remove();
-		});
+		cache.forEach(removeRow);
 
 		anchor.remove();
 	});
+
+	// Several nodes: gather them behind a start comment into one fragment so the
+	// row is a contiguous range (renderables re-resolve their anchor's parent, so
+	// moving them is safe). Returns the start comment.
+	const startRange = (nodes) => {
+		const start = document.createComment("qrp-row");
+
+		document.createDocumentFragment().append(start, ...nodes);
+		marker._ranged = true;
+
+		return start;
+	};
 
 	// Build a row DETACHED (its effects belong to the row's own scope so they
 	// survive reconciles). The item is wrapped reactively here, once — so cell
@@ -1059,17 +1116,23 @@ const setupList = (parent, marker) => {
 	// as their raw selves; such a row can't update through bindings and must be
 	// rebuilt when its item is replaced.
 	const buildRow = (item, index) => {
-		let element;
+		let nodes;
 		let rowScope;
 		const reactiveItem = state(item);
 
 		untracked(() => {
 			rowScope = scope(() => {
-				element = toNodes(marker.render(reactiveItem, index))[0];
+				nodes = toNodes(marker.render(reactiveItem, index));
 			});
 		});
 
-		return { element, scope: rowScope, item: reactiveItem, rawItem: item, proxied: reactiveItem !== item || raw(item) !== item };
+		// Fast path: a single non-comment node is the whole row. (A lone comment
+		// is a renderable's anchor with an empty branch — it may grow later.)
+		const single = nodes.length === 1 && nodes[0].nodeType !== COMMENT_NODE;
+		const first = single ? nodes[0] : startRange(nodes);
+		const last = nodes.length ? nodes[nodes.length - 1] : first;
+
+		return { first, last, scope: rowScope, item: reactiveItem, rawItem: item, proxied: reactiveItem !== item || raw(item) !== item };
 	};
 
 	effect(() => {
@@ -1140,24 +1203,22 @@ const setupList = (parent, marker) => {
 					// update and merging would throw on a frozen target, so rebuild
 					// the row. Dropping the key from `cache` makes the reorder pass
 					// treat the fresh element as new (the old one is gone).
-					entry.scope.dispose();
-					entry.element.remove();
+					removeRow(entry);
 					cache.delete(key);
 					entry = buildRow(item, index);
 				}
 			}
 
 			next.set(key, entry);
-			marker._elemToItem.set(entry.element, item);
-			desired.push(entry.element);
+			marker._elemToItem.set(entry.first, item);
+			desired.push(entry);
 			keys.push(key);
 		});
 
 		// Remove rows whose keys are gone; dispose their effects.
 		cache.forEach((entry, key) => {
 			if(!next.has(key)) {
-				entry.scope.dispose();
-				entry.element.remove();
+				removeRow(entry);
 			}
 		});
 
@@ -1180,13 +1241,13 @@ const setupList = (parent, marker) => {
 		let ref = anchor;
 
 		for(let i = desired.length - 1; i >= 0; i--) {
-			const node = desired[i];
+			const entry = desired[i];
 
 			if(sources[i] === -1 || !stable.has(i)) {
-				anchor.parentNode.insertBefore(node, ref);
+				moveRow(entry, ref);
 			}
 
-			ref = node;
+			ref = entry.first;
 		}
 
 		cache = next;
@@ -1205,13 +1266,15 @@ const setupList = (parent, marker) => {
  *     item => el("tr", {}, () => item.name) // built once per key; self-updates
  *   ));
  *
- * `render(item, index)` must return a single element. The returned marker also
- * exposes itemFor(elementOrEvent) → the item that produced that element, for
+ * `render(item, index)` usually returns a single element (the fast path). It may
+ * also return several nodes, an array, or a when()/renderable — that row's
+ * nodes move and are removed as a group. The returned marker also exposes
+ * itemFor(elementOrEvent) → the item that produced that element, for
  * one-listener event delegation over large lists (via a WeakMap, leak-free).
  *
  * @param {Function} source () => Array (reactive)
  * @param {Function} keyFn item => stable unique key
- * @param {Function} render (item, index) => Element
+ * @param {Function} render (item, index) => renderable (ideally one Element)
  * @param {object} [options]
  * @param {"error"|"warn"|"throw"} [options.onDuplicateKey] what to do when two
  *   items share a key (the row is always dropped — a node lives in one place):
@@ -1222,22 +1285,45 @@ const setupList = (parent, marker) => {
 export const list = (source, keyFn, render, options = {}) => {
 	const elemToItem = new WeakMap();
 
+	// Multi-node rows map only their start comment, and a node inside one (even
+	// one a nested when() swapped in later) isn't a descendant of it: find the
+	// nearest row start among the node's preceding siblings, stopping at this
+	// list's end anchor so content after the list never matches its last row.
+	const rangedItemFor = (start) => {
+		for(let node = start; node; node = node.parentElement) {
+			for(let sibling = node; sibling && !marker._ends.has(sibling); sibling = sibling.previousSibling) {
+				if(elemToItem.has(sibling)) {
+					return elemToItem.get(sibling);
+				}
+			}
+		}
+
+		return undefined;
+	};
+
 	const marker = {
 		source,
 		keyFn,
 		render,
 		onDuplicateKey: options.onDuplicateKey || "error",
 		_elemToItem: elemToItem,
+		_ends: new WeakSet(),
+		_ranged: false,
 		toString: markerHint("list"),
 
 		itemFor: (target) => {
-			let node = target && target.nodeType ? target : (target && target.target);
+			const start = target && target.nodeType ? target : (target && target.target);
+			let node = start;
 
 			while(node && !elemToItem.has(node)) {
 				node = node.parentElement;
 			}
 
-			return node ? elemToItem.get(node) : undefined;
+			if(node) {
+				return elemToItem.get(node);
+			}
+
+			return marker._ranged ? rangedItemFor(start) : undefined;
 		}
 	};
 
