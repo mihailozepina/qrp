@@ -184,6 +184,63 @@ test("trapFocus wraps Tab from last to first", () => {
 	assert.equal(document.activeElement, first);
 });
 
+const tab = (extra = {}) => Object.assign(new Event("keydown", { bubbles: true, cancelable: true }), { key: "Tab", ...extra });
+
+const dialogWith = (trailing) => {
+	const modal = document.createElement("div");
+	modal.innerHTML = `<input><button id="ok">OK</button>${trailing}`;
+	document.body.appendChild(modal);
+
+	return modal;
+};
+
+test("trapFocus wraps Tab when the last focusable-looking element has tabindex=-1", () => {
+	const modal = dialogWith("<button tabindex=\"-1\">skip</button>");
+	const dispose = trapFocus(modal);
+	const first = modal.querySelector("input");
+
+	modal.querySelector("#ok").focus();
+	const event = tab();
+	modal.dispatchEvent(event);
+
+	assert.equal(event.defaultPrevented, true, "focus must not escape the trap");
+	assert.equal(document.activeElement, first);
+
+	dispose();
+	modal.remove();
+});
+
+test("trapFocus wraps Tab past hidden and inert trailing elements", () => {
+	const modal = dialogWith("<button hidden>h</button><div inert><button>i</button></div><div hidden><a href=\"#\">x</a></div>");
+	const dispose = trapFocus(modal);
+
+	modal.querySelector("#ok").focus();
+	const event = tab();
+	modal.dispatchEvent(event);
+
+	assert.equal(event.defaultPrevented, true);
+	assert.equal(document.activeElement, modal.querySelector("input"));
+
+	dispose();
+	modal.remove();
+});
+
+test("trapFocus Shift+Tab from first wraps to the last tabbable element", () => {
+	const modal = dialogWith("<button tabindex=\"-1\">skip</button><button hidden>h</button>");
+	const dispose = trapFocus(modal);
+	const first = modal.querySelector("input");
+
+	assert.equal(document.activeElement, first);
+	const event = tab({ shiftKey: true });
+	modal.dispatchEvent(event);
+
+	assert.equal(event.defaultPrevented, true);
+	assert.equal(document.activeElement, modal.querySelector("#ok"));
+
+	dispose();
+	modal.remove();
+});
+
 // --- anchored ---------------------------------------------------------------
 
 test("anchored positions the floating element (fixed) and dispose is a fn", () => {

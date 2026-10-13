@@ -14,6 +14,24 @@ const FOCUSABLE = [
 	"[tabindex]:not([tabindex=\"-1\"])"
 ].join(",");
 
+// The selector also matches elements Tab never lands on. If one of those comes
+// last (or first), the wrap check below never matches and focus escapes the
+// trap, so drop them: negative tabindex, anything under [hidden]/[inert], and
+// (where the browser supports it) anything not rendered (display:none etc.).
+const isTabbable = (element) => {
+	const tabindex = element.getAttribute("tabindex");
+
+	if(tabindex !== null && parseInt(tabindex, 10) < 0) {
+		return false;
+	}
+
+	if(element.closest("[hidden],[inert]")) {
+		return false;
+	}
+
+	return typeof element.checkVisibility === "function" ? element.checkVisibility() : true;
+};
+
 /**
  * Trap Tab/Shift+Tab within `node`, focus its first focusable (or the node),
  * and restore focus to the previously-focused element on dispose. The teardown
@@ -27,7 +45,7 @@ const FOCUSABLE = [
 export const trapFocus = (node) => {
 	const previouslyFocused = document.activeElement;
 
-	const focusables = () => [...node.querySelectorAll(FOCUSABLE)];
+	const focusables = () => [...node.querySelectorAll(FOCUSABLE)].filter(isTabbable);
 
 	const onKey = (event) => {
 		if(event.key !== "Tab") {
