@@ -53,8 +53,28 @@ export interface Column<T> {
 	tdClass?: string;
 }
 
-export interface TableOptions<T> {
-	rows: (() => readonly T[]) | readonly T[];
+/** Where a table() gets its rows: a `rows` source, or a shared `view`. */
+export type TableRows<T> = (() => readonly T[]) | readonly T[];
+
+/** What table() needs from a shared `view` (a collection() or dataGrid). */
+export type TableView<T> = Pick<Collection<T>, "items" | "sort" | "toggleSort"> & Partial<Collection<T>>;
+
+/** table() options: `rows`, or a shared `view` (then `rows` is optional and ignored). */
+export type TableOptions<T> = TableBaseOptions<T> & (
+	| { rows: TableRows<T>; view?: undefined }
+	| {
+		/** Render through an existing collection() or dataGrid (anything with
+		 *  `items()`, `sort` and `toggleSort`) instead of building a second one. It
+		 *  owns rows/sort/filter/page — those options and `filterFn` are ignored —
+		 *  and sorting uses its compare. Share it with a toolbar/pager so both agree. */
+		view: TableView<T>;
+		/** Ignored when `view` is given. */
+		rows?: TableRows<T>;
+	}
+);
+
+/** The table() options shared by both row sources (see TableOptions). */
+export interface TableBaseOptions<T> {
 	/** Columns — an array, or a thunk `() => Column[]` for a reactive set
 	 *  (column visibility toggle, role-gated columns; rows re-render, elements reused). */
 	fields: Column<T>[] | (() => Column<T>[]);
@@ -87,11 +107,6 @@ export interface TableOptions<T> {
 		td?: (column: Column<T>, item: T) => Record<string, string | number | boolean | null | undefined>;
 		th?: (column: Column<T>) => Record<string, string | number | boolean | null | undefined>;
 	};
-	/** Render through an existing collection() or dataGrid (anything with
-	 *  `items()`, `sort` and `toggleSort`) instead of building a second one. It
-	 *  owns rows/sort/filter/page — those options and `filterFn` are ignored —
-	 *  and sorting uses its compare. Share it with a toolbar/pager so both agree. */
-	view?: Pick<Collection<T>, "items" | "sort" | "toggleSort"> & Partial<Collection<T>>;
 	sortField?: string;
 	sortDesc?: boolean;
 }
@@ -120,14 +135,16 @@ export type TableElement<T> = HTMLTableElement & {
 /** Build a declarative, sortable, keyed, paginated data table. */
 export function table<T>(options: TableOptions<T>): TableElement<T>;
 
-/** A stock prev / windowed-pages / next control for a table().view (or any collection). */
-export function tablePager(view: Collection<any>, options?: {
+/** A stock prev / windowed-pages / next control for a table().view (or any
+ *  collection / dataGrid — it only reads `page` and `pageCount()`). */
+export function tablePager(view: Pick<Collection<any>, "page" | "pageCount">, options?: {
 	window?: number;
 	/** Extra classes: the <nav>, every button, the current page's button, the "…" gap. */
 	classes?: { nav?: string; button?: string; active?: string; gap?: string };
 }): HTMLElement;
 
-/** A reactive "Showing X–Y of Z" summary for a table().view (or any collection). */
-export function tableSummary(view: Collection<any>, options?: {
+/** A reactive "Showing X–Y of Z" summary for a table().view (or any
+ *  collection / dataGrid — it only reads `page` and `total()`). */
+export function tableSummary(view: Pick<Collection<any>, "page" | "total">, options?: {
 	label?: (from: number, to: number, total: number) => string;
 }): HTMLElement;
