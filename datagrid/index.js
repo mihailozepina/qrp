@@ -120,17 +120,19 @@ export const dataGrid = (source, options = {}) => {
 		view.page.index = Math.min(Math.max(0, index), last);
 	};
 
-	const next = () => goto(view.page.index + 1);
-	const prev = () => goto(view.page.index - 1);
-	const hasNext = () => view.page.index < view.pageCount() - 1;
-	const hasPrev = () => view.page.index > 0;
+	// Step from the page actually shown (pageIndex() is page.index clamped into
+	// range), not the raw index, which a shrinking filter can leave past the end.
+	const next = () => goto(view.pageIndex() + 1);
+	const prev = () => goto(view.pageIndex() - 1);
+	const hasNext = () => view.pageIndex() < view.pageCount() - 1;
+	const hasPrev = () => view.pageIndex() > 0;
 
 	// A sliding window of page indices centered on the current page, clamped to
 	// [0, pageCount-1]. Compare the ends to 0 / (pageCount-1) to render ellipses
 	// and first/last jumps yourself.
 	const pageWindow = (span = 5) => {
 		const count = view.pageCount();
-		const current = view.page.index;
+		const current = view.pageIndex();
 		const end = Math.min(count - 1, Math.max(current + Math.floor(span / 2), span - 1));
 		const start = Math.max(0, end - span + 1);
 
@@ -145,6 +147,7 @@ export const dataGrid = (source, options = {}) => {
 		items: view.items,
 		total: view.total,
 		pageCount: view.pageCount,
+		pageIndex: view.pageIndex,
 		toggleSort: view.toggleSort,
 		sort: view.sort,
 		filter: view.filter,

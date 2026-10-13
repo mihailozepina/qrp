@@ -40,6 +40,8 @@ export interface DataGrid<T> {
 	total(): number;
 	/** Number of pages at the current size. */
 	pageCount(): number;
+	/** The page shown: `page.index` clamped to [0, pageCount-1]. */
+	pageIndex(): number;
 	/** Toggle sort on a key (asc, then flip). */
 	toggleSort(key: string): void;
 	sort: SortState;

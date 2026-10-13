@@ -2,7 +2,7 @@
  * @module collection
  * Reactive sort / filter / paginate over a dataset. `collection(source, options)`
  * returns `{ sort, filter, page, items(), filtered(), total(), pageCount(),
- * toggleSort() }`;
+ * pageIndex(), toggleSort() }`;
  * `items()` is reactive — feed it to `list()`. `options`:
  * `{ sort?, page?, filter?, filterFn?, compare? }`. `compareValues(a, b, dir?)`
  * is the default comparator (missing values last, numbers/Dates numeric, else
@@ -44,6 +44,12 @@ export interface Collection<T> {
 	total(): number;
 	/** Number of pages at the current size. */
 	pageCount(): number;
+	/**
+	 * Reactive: the page `items()` shows — `page.index` clamped to
+	 * [0, pageCount-1]. After a filter shrinks the set, `page.index` may be out
+	 * of range; pagers and "Showing X–Y" summaries should read this instead.
+	 */
+	pageIndex(): number;
 	/** Toggle sort direction on the same key, else sort by it ascending. */
 	toggleSort(key: string): void;
 }

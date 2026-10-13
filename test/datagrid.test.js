@@ -103,6 +103,28 @@ test("paging: default size adopted, setPageSize resets to page 0, windowed pager
 	assert.deepEqual(grid.pageWindow(3), [1, 2, 3], "clamped at the end");
 });
 
+test("prev/next/hasPrev/hasNext/pageWindow use the clamped page after a filter shrinks the set", () => {
+	const many = Array.from({ length: 100 }, (_, i) => ({ id: i }));
+	const filter = state({ max: 100 });
+	const grid = dataGrid(() => many, { key: r => r.id, pageSizes: [10], filter, filterFn: (r, f) => r.id < f.max });
+
+	grid.goto(9);
+	filter.max = 25;   // 3 pages left; raw index still 9
+
+	assert.equal(grid.pageIndex(), 2);
+	assert.equal(grid.hasNext(), false);
+	assert.equal(grid.hasPrev(), true);
+	assert.deepEqual(grid.pageWindow(3), [0, 1, 2]);
+
+	grid.prev();
+	assert.equal(grid.page.index, 1, "prev goes to the page before the one shown");
+	assert.equal(grid.items()[0].id, 10);
+
+	grid.goto(9);
+	grid.next();
+	assert.equal(grid.page.index, 2, "next from the clamped last page stays on it");
+});
+
 test("an explicit page option is honored (no default size forced)", () => {
 	const grid = dataGrid(rows, { key: r => r.id, page: state({ index: 0, size: 0 }) });
 

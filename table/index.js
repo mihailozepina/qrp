@@ -372,6 +372,11 @@ const pageWindow = (current, count, window) => {
  * @param {object} [options.classes] extra classes: { nav, button, active, gap }
  * @returns {HTMLElement}
  */
+// The page the view actually shows. A collection clamps page.index into range
+// (a filter can shrink the set under it); a hand-rolled view may not have
+// pageIndex(), so fall back to the raw index.
+const currentPage = (view) => (view.pageIndex ? view.pageIndex() : view.page.index);
+
 export const tablePager = (view, options = {}) => {
 	const window = options.window === undefined ? 1 : options.window;
 	const classes = options.classes || {};
@@ -390,7 +395,7 @@ export const tablePager = (view, options = {}) => {
 
 	return el("nav", { class: join("qrp-pager", classes.nav), "aria-label": "Pagination" }, () => {
 		const count = view.pageCount();
-		const current = view.page.index;
+		const current = currentPage(view);
 
 		if(count <= 1) {
 			return [];
@@ -431,7 +436,7 @@ export const tableSummary = (view, options = {}) => {
 			return `${total} total`;
 		}
 
-		const from = view.page.index * size + 1;
+		const from = currentPage(view) * size + 1;
 		const to = Math.min(from + size - 1, total);
 
 		return label(from, to, total);
