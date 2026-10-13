@@ -234,3 +234,42 @@ test("field() links its label to a button-based custom control", () => {
 	assert.ok(button.id, "button control gets an id");
 	assert.equal(label.getAttribute("for"), button.id);
 });
+
+test("settings-driven form binds flat dotted keys from parseKV as-is", () => {
+	const settings = state(parseKV("server.port=8080\nNICK=R2"));
+	const container = form({ settings });
+	const inputs = [...container.querySelectorAll("input")];
+
+	assert.deepEqual(inputs.map((input) => input.value), ["8080", "R2"]);
+	assert.equal(serializeKV(settings), "server.port=8080\nNICK=R2");
+
+	inputs[0].value = "9090";
+	inputs[0].dispatchEvent(new Event("input"));
+
+	assert.equal(serializeKV(settings), "server.port=9090\nNICK=R2");
+});
+
+test("radio groups for dotted fields sharing a leaf don't share a name", () => {
+	const settings = state({ a: { mode: "x" }, b: { mode: "x" } });
+	const options = { x: "X", y: "Y" };
+	const container = form({
+		fields: { "a.mode": { type: "radio", options }, "b.mode": { type: "radio", options } },
+		settings
+	});
+
+	document.body.appendChild(container);
+
+	const groups = [...container.querySelectorAll(".radio-group")]
+		.map((group) => [...group.querySelectorAll("input[type=radio]")]);
+
+	assert.notEqual(groups[0][0].name, groups[1][0].name);
+
+	groups[1][1].checked = true;
+	groups[1][1].dispatchEvent(new Event("change"));
+
+	assert.equal(settings.b.mode, "y");
+	assert.equal(settings.a.mode, "x");
+	assert.equal(groups[0][0].checked, true);
+
+	container.remove();
+});
