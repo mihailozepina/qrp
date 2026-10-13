@@ -45,11 +45,14 @@ const MODULES = [
 // --- parse one .d.ts into { overview, entries[], types[] } -----------------
 
 // Find the end of a declaration (first `;` at bracket depth 0) from `start`.
+// The ">" of an arrow `=>` is not a closing bracket — counting it would end a
+// signature early at the first `;` inside a later `{ a: () => void; … }`.
 const declEnd = (text, start) => {
 	let depth = 0;
 	for(let i = start; i < text.length; i++) {
 		const c = text[i];
 		if("([{<".includes(c)) { depth++; }
+		else if(c === ">" && text[i - 1] === "=") { continue; }
 		else if(")]}>".includes(c)) { depth--; }
 		else if(c === ";" && depth <= 0) { return i; }
 	}
