@@ -4,7 +4,9 @@
  * returns `{ sort, filter, page, items(), filtered(), total(), pageCount(),
  * toggleSort() }`;
  * `items()` is reactive — feed it to `list()`. `options`:
- * `{ sort?, page?, filter?, filterFn?, compare? }`.
+ * `{ sort?, page?, filter?, filterFn?, compare? }`. `compareValues(a, b, dir?)`
+ * is the default comparator (missing values last, numbers/Dates numeric, else
+ * natural-order strings) — reuse it inside a custom `compare`.
  */
 export interface SortState {
 	key: string | null;
@@ -48,3 +50,10 @@ export interface Collection<T> {
 
 /** Reactive sort / filter / paginate over a dataset. */
 export function collection<T>(source: () => readonly T[], options?: CollectionOptions<T>): Collection<T>;
+
+/**
+ * The default sort comparator: null/undefined/NaN always last (either
+ * direction), numbers and Dates numerically, everything else by natural-order
+ * string comparison. `dir` is 1 (ascending, default) or -1.
+ */
+export function compareValues(a: unknown, b: unknown, dir?: number): number;

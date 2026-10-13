@@ -62,6 +62,21 @@ test("numeric sort uses raw value, not string compare", () => {
 });
 
 test("sortByFormatted sorts by the formatted string", () => {
+	const store = state({ items: [{ id: 1, n: 1 }, { id: 2, n: 2 }, { id: 3, n: 3 }] });
+	const label = { 1: "cherry", 2: "apple", 3: "banana" };
+
+	const t = table({
+		rows: () => store.items,
+		key: (i) => i.id,
+		fields: [{ key: "n", label: "N", sortable: true, formatter: (v) => label[v], sortByFormatted: true }]
+	});
+
+	t.querySelector("thead th").click();
+	// raw order would be cherry, apple, banana; formatted order is alphabetical
+	assert.deepEqual([...t.querySelectorAll("tbody td")].map((td) => td.textContent), ["apple", "banana", "cherry"]);
+});
+
+test("sortByFormatted compares embedded numbers naturally", () => {
 	const store = state({ items: [{ id: 1, n: 2 }, { id: 2, n: 10 }, { id: 3, n: 1 }] });
 
 	const t = table({
@@ -71,8 +86,39 @@ test("sortByFormatted sorts by the formatted string", () => {
 	});
 
 	t.querySelector("thead th").click();
-	// formatted: "#1","#10","#2" → lexicographic → 1, 10, 2
-	assert.deepEqual([...t.querySelectorAll("tbody td")].map((td) => td.textContent), ["#1", "#10", "#2"]);
+	assert.deepEqual([...t.querySelectorAll("tbody td")].map((td) => td.textContent), ["#1", "#2", "#10"]);
+});
+
+test("table sort puts missing values last in both directions, real values in order", () => {
+	const values = [5, undefined, 3, null, 9, undefined, 1, 7, null, 2, 8, undefined, 4, 6];
+	const store = state({ items: values.map((v, i) => ({ id: i, v })) });
+
+	const t = table({
+		rows: () => store.items,
+		key: (i) => i.id,
+		fields: [{ key: "v", label: "V", sortable: true, formatter: (v) => (v === null || v === undefined ? "-" : String(v)) }]
+	});
+	const cells = () => [...t.querySelectorAll("tbody td")].map((td) => td.textContent).join(" ");
+	const th = t.querySelector("thead th");
+
+	th.click();
+	assert.equal(cells(), "1 2 3 4 5 6 7 8 9 - - - - -");
+
+	th.click();
+	assert.equal(cells(), "9 8 7 6 5 4 3 2 1 - - - - -");
+});
+
+test("table sort orders mixed numbers and strings consistently", () => {
+	const store = state({ items: [10, "n/a", 2, "n/a", 33, 1].map((v, i) => ({ id: i, v })) });
+
+	const t = table({
+		rows: () => store.items,
+		key: (i) => i.id,
+		fields: [{ key: "v", label: "V", sortable: true }]
+	});
+
+	t.querySelector("thead th").click();
+	assert.deepEqual([...t.querySelectorAll("tbody td")].map((td) => td.textContent), ["1", "2", "10", "33", "n/a", "n/a"]);
 });
 
 test("render column outputs a custom element", () => {

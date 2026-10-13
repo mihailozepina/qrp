@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { state, el, list } from "../qrp/index.js";
-import { collection } from "../collection/index.js";
+import { collection, compareValues } from "../collection/index.js";
 
 const rows = () => [
 	{ id: 1, name: "carol", age: 30 },
@@ -95,4 +95,46 @@ test("collection.items drives a keyed list reactively", () => {
 
 	filter.q = "o"; // bob, carol
 	assert.deepEqual([...ul.querySelectorAll("li")].map((li) => li.textContent), ["bob", "carol"]);
+});
+
+const sortedBy = (values, dir) => {
+	const items = values.map((v, i) => ({ id: i, v }));
+	const view = collection(() => items, { sort: { key: "v", dir } });
+
+	return view.items().map((r) => String(r.v)).join(" ");
+};
+
+test("sort puts null/undefined last in both directions and keeps real values ordered", () => {
+	const values = [5, undefined, 3, null, 9, undefined, 1, 7, null, 2, 8, undefined, 4, 6];
+	const missing = "undefined null undefined null undefined"; // stable: source order
+
+	assert.equal(sortedBy(values, 1), `1 2 3 4 5 6 7 8 9 ${missing}`);
+	assert.equal(sortedBy(values, -1), `9 8 7 6 5 4 3 2 1 ${missing}`);
+});
+
+test("sort orders mixed numbers and strings consistently (natural order)", () => {
+	assert.equal(sortedBy([10, "n/a", 2, "n/a", 33, 1], 1), "1 2 10 33 n/a n/a");
+	assert.equal(sortedBy(["item 10", "item 2", "item 1"], 1), "item 1 item 2 item 10");
+	assert.equal(sortedBy([10, "n/a", 2, "n/a", 33, 1], -1), "n/a n/a 33 10 2 1");
+});
+
+test("sort compares Date values chronologically", () => {
+	const dates = [new Date("2024-03-01"), new Date("2023-12-31"), null, new Date("2024-01-15")];
+	const items = dates.map((v, i) => ({ id: i, v }));
+	const view = collection(() => items, { sort: { key: "v", dir: 1 } });
+
+	assert.deepEqual(view.items().map((r) => r.id), [1, 3, 0, 2]);
+
+	view.sort.dir = -1;
+	assert.deepEqual(view.items().map((r) => r.id), [0, 3, 1, 2]);
+});
+
+test("compareValues: nullish last regardless of direction, equal → 0", () => {
+	assert.equal(compareValues(1, 1, 1), 0);
+	assert.equal(compareValues(null, undefined, -1), 0);
+	assert.ok(compareValues(null, 1, 1) > 0);
+	assert.ok(compareValues(null, 1, -1) > 0);
+	assert.ok(compareValues(1, undefined, -1) < 0);
+	assert.ok(compareValues(2, 10, 1) < 0);
+	assert.ok(compareValues(2, 10, -1) > 0);
 });

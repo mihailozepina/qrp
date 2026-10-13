@@ -43,7 +43,7 @@
  */
 
 import { el, list, state, when, effect } from "../qrp/index.js";
-import { collection } from "../collection/index.js";
+import { collection, compareValues } from "../collection/index.js";
 
 const resolveValue = (fieldSpec, item) => {
 	const accessor = fieldSpec.accessor || ((row) => row[fieldSpec.key]);
@@ -155,14 +155,7 @@ export const table = (options) => {
 				return 0;
 			}
 
-			const av = sortValue(fieldSpec, a);
-			const bv = sortValue(fieldSpec, b);
-
-			if(av === bv) {
-				return 0;
-			}
-
-			return (av > bv ? 1 : -1) * (sortState.dir || 1);
+			return compareValues(sortValue(fieldSpec, a), sortValue(fieldSpec, b), sortState.dir);
 		}
 	});
 
