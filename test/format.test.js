@@ -26,3 +26,35 @@ test("format: nullish/NaN → empty string", () => {
 	assert.equal(bytes(NaN), "");
 	assert.equal(date(null), "");
 });
+
+test("format: invalid dates → empty string, not a RangeError", () => {
+	assert.equal(relTime("not a date"), "");
+	assert.equal(relTime(NaN), "");
+	assert.equal(relTime(new Date(NaN)), "");
+	assert.equal(date("not a date"), "");
+	assert.equal(date(NaN), "");
+	assert.equal(date(new Date(NaN)), "");
+});
+
+test("format: a larger minimumFractionDigits widens the default maximum", () => {
+	assert.equal(pct(0.1234, { minimumFractionDigits: 2 }), "12.34%");
+	assert.equal(compact(43373, { minimumFractionDigits: 2 }), "43.37K");
+	assert.equal(bytes(1536, { minimumFractionDigits: 2 }), "1.50 KB");
+	assert.equal(bytes(500, { minimumFractionDigits: 2 }), "500.00 B");
+	assert.equal(duration(90000, { minimumFractionDigits: 2 }), "1.50 minutes");
+	// an explicit maximumFractionDigits still wins
+	assert.equal(pct(0.1234, { maximumFractionDigits: 1 }), "12.3%");
+	assert.equal(bytes(1536, { maximumFractionDigits: 0 }), "2 KB");
+});
+
+test("format: the unit is chosen after rounding", () => {
+	assert.equal(bytes(1048575), "1 MB");
+	assert.equal(bytes(1023.6), "1 KB");
+	assert.equal(bytes(-1048575), "-1 MB");
+	assert.equal(bytes(1023.6, { maximumFractionDigits: 1 }), "1,023.6 B");
+	assert.equal(duration(59999), "1 minute");
+	assert.equal(duration(864e5 - 1), "1 day");
+	assert.equal(duration(59999, { maximumFractionDigits: 3 }), "59.999 seconds");
+	assert.equal(relTime(Date.now() - 59600), "1 minute ago");
+	assert.equal(relTime(Date.now() - 3599e3 - 600), "1 hour ago");
+});
