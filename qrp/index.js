@@ -1498,6 +1498,7 @@ export const router = (routes, outlet, options = {}) => {
 
 	let current = null;
 	let currentRouteObj = null;
+	let navToken = 0;
 
 	const resolve = () => {
 		const path = location.pathname;
@@ -1523,11 +1524,20 @@ export const router = (routes, outlet, options = {}) => {
 	const render = () => {
 		const { route, component, ctx } = resolve();
 
+		// Every render supersedes any swap still waiting on a View Transition:
+		// a stale swap must not mount its (older) page over this navigation.
+		navToken += 1;
+
+		const token = navToken;
+
 		// publish the active route as reactive state before mounting, so a navbar
-		// (or anything outside the handler) reacts to navigation.
-		currentRoute.path = ctx.path;
-		currentRoute.params = ctx.params;
-		currentRoute.query = ctx.query;
+		// (or anything outside the handler) reacts to navigation. Batched so an
+		// effect never sees the new path with the old params.
+		batch(() => {
+			currentRoute.path = ctx.path;
+			currentRoute.params = ctx.params;
+			currentRoute.query = ctx.query;
+		});
 
 		// Same route pattern (a param/query change within the same page, e.g. a
 		// tab switch): DON'T tear the page down and remount — just refresh links
@@ -1540,6 +1550,10 @@ export const router = (routes, outlet, options = {}) => {
 		}
 
 		const swap = () => {
+			if(token !== navToken) {
+				return;
+			}
+
 			if(current) {
 				current.dispose();
 			}
