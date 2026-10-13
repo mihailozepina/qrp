@@ -21,7 +21,8 @@
  * error body, so callers can read validation details (the Response body is
  * consumed). An "Unauthorized" body (object or string form) or a 401 also emits
  * "auth:unauthorized". Network failure rejects with the fetch TypeError after a
- * generic "error" emit. In every case the returned promise rejects.
+ * generic "error" emit; a request cancelled via `signal` rejects with the
+ * AbortError but emits nothing. In every case the returned promise rejects.
  *
  * Bodies: plain objects/arrays are JSON-stringified (with a JSON content-type);
  * FormData/Blob/ArrayBuffer/URLSearchParams/typed-arrays pass through so fetch
@@ -38,6 +39,15 @@ import { bus } from "../events/index.js";
 const GENERIC_ERROR = "Error contacting server...";
 const JSON_CONTENT_TYPE = "application/json";
 
+// A URL with its own scheme ("https://", "ws://", …) or a protocol-relative
+// "//host/…" is used as-is. A bare `startsWith("http")` also matched relative
+// paths like "httpbin/status" and silently dropped baseUrl.
+const ABSOLUTE_URL = /^([a-z][a-z\d+.-]*:)?\/\//i;
+
+// fetch rejects with an AbortError when the caller cancelled via `signal` —
+// a deliberate outcome, not a server problem worth a toast.
+const isAbort = (error) => error != null && error.name === "AbortError";
+
 // --- factory ----------------------------------------------------------------
 
 /**
@@ -46,7 +56,8 @@ const JSON_CONTENT_TYPE = "application/json";
  * @param {object} [options]
  * @param {string} [options.baseUrl] prefix for relative URLs, joined to the path
  *   with exactly one "/" (a leading slash on the path is optional); absolute
- *   URLs starting with "http" are left untouched
+ *   URLs ("https://…", any "scheme://…") and protocol-relative "//host/…" are
+ *   left untouched
  * @param {function} [options.token] () => string|null bearer token getter
  * @param {function} [options.client] () => string|null value for the
  *   x-authorization-client header
@@ -127,9 +138,15 @@ export const createHttp = (options = {}) => {
 	};
 
 	const buildUrl = (path, params) => {
+		// regex.test() would coerce a non-string (null → "null") and quietly
+		// request the base URL; reject it like the old path.indexOf() did.
+		if(typeof path !== "string") {
+			throw new TypeError(`http: path must be a string, got ${path}`);
+		}
+
 		let url = path;
 
-		if(path.indexOf("http") !== 0) {
+		if(!ABSOLUTE_URL.test(path)) {
 			url = join(baseUrl, path);
 		}
 
@@ -317,7 +334,10 @@ export const createHttp = (options = {}) => {
 			return response.text().then(parseBody);
 		};
 
-		return doFetch(url, init).then((response) => {
+		// new Promise() turns a custom transport that throws synchronously into a
+		// rejection, so it still reaches the finally(stop) below instead of
+		// escaping with the loader counter stuck at ≥1.
+		return new Promise((resolve) => resolve(doFetch(url, init))).then((response) => {
 			if(response.ok) {
 				return readOk(response);
 			}
@@ -337,8 +357,11 @@ export const createHttp = (options = {}) => {
 				return Promise.reject({ status: response.status, data, response });
 			});
 		}, (networkError) => {
-			// fetch rejected → no response at all (network failure / abort).
-			emitter.emit("error", { message: GENERIC_ERROR });
+			// fetch rejected → no response at all (network failure / abort). A
+			// cancellation still rejects, but doesn't toast an error.
+			if(!isAbort(networkError)) {
+				emitter.emit("error", { message: GENERIC_ERROR });
+			}
 
 			return Promise.reject(networkError);
 		}).finally(stop);
