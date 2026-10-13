@@ -273,6 +273,11 @@ export interface ListMarker<T> extends QrpRenderable {
  * (`el("ul", {}, ...store.rows.map(Row))`) renders **once** — the spread happens
  * before `el()` is called, so there is no function for qrp to re-run.
  *
+ * `render` ideally returns one element per row (the fast path). It may also
+ * return several nodes, an array, or a `when()`/renderable — that row's nodes
+ * (including whatever a nested `when()` swaps in later) move and are removed as
+ * a group, and `itemFor()` still resolves them.
+ *
  * `keyFn` must return a **unique** key per item. Duplicate keys drop the row (two
  * items can't share one element) and `console.error` by default — tune with
  * `options.onDuplicateKey`. If `render` throws, the error propagates out of the
