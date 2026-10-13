@@ -37,5 +37,13 @@ export interface AsyncViews<T> {
 	data?: (data: T) => unknown;
 }
 
-/** Map a resource's state to `when` branches (loading/error/empty/data). */
+/**
+ * Map a resource's state to `when` branches (loading/error/empty/data).
+ *
+ * A branch is built once per phase, not per value: a reload that goes
+ * data → data keeps the data branch (keyed rows, focus, sort/selection state
+ * survive). Read the live value through the resource inside the branch —
+ * `data: () => list(() => res.data, (r) => r.id, row)` — the callback's
+ * argument is only the value the branch was first built with.
+ */
 export function asyncView<T>(res: Resource<T>, views?: AsyncViews<T>): WhenMarker;

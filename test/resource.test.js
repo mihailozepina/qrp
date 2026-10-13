@@ -1,9 +1,9 @@
 import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { effect } from "../qrp/index.js";
+import { effect, el, list } from "../qrp/index.js";
 import { emitter } from "../events/index.js";
-import { resource } from "../resource/index.js";
+import { resource, asyncView } from "../resource/index.js";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -43,4 +43,22 @@ test("refreshOn a bus event reloads", async () => {
 	b.emit("refresh");
 	await tick();
 	assert.equal(calls, 2);       // reloaded on the event
+});
+
+test("asyncView: the documented data branch follows a reload and keeps its rows", async () => {
+	let rows = [{ id: 1, n: "a" }, { id: 2, n: "b" }];
+	const res = resource(() => Promise.resolve(rows));
+	const ul = el("ul", {}, asyncView(res, {
+		data: () => list(() => res.data, (r) => r.id, (r) => el("li", {}, () => r.n))
+	}));
+
+	await res.reload();
+	const first = ul.querySelector("li");
+	assert.deepEqual([...ul.querySelectorAll("li")].map((li) => li.textContent), ["a", "b"]);
+
+	rows = [{ id: 1, n: "A" }, { id: 3, n: "c" }];
+	await res.reload();
+
+	assert.deepEqual([...ul.querySelectorAll("li")].map((li) => li.textContent), ["A", "c"]);
+	assert.equal(ul.querySelector("li"), first, "the surviving row element is reused");
 });

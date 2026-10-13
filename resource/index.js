@@ -67,8 +67,14 @@ const isEmpty = (data) => data == null || (Array.isArray(data) && data.length ==
  *     loading: () => el("p", {}, "…"),
  *     error:   (e) => el("p", {}, `Failed: ${e.message}`),
  *     empty:   () => el("p", {}, "No data"),
- *     data:    (rows) => list(() => rows, r => r.id, row),
+ *     data:    () => list(() => hist.data, r => r.id, row),
  *   });
+ *
+ * A branch is built once per PHASE, not per value: a reload that goes
+ * data → data keeps the data branch (and its keyed rows, focus, sort and
+ * selection state). So read the live value through the resource inside the
+ * branch (`() => hist.data`); the argument is only a snapshot of the value
+ * the branch was built with.
  *
  * @param {object} res a resource() (or anything with reactive data/loading/error)
  * @param {object} [views] { loading?, error?(err), empty?, data?(data) }
