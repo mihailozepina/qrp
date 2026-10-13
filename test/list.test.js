@@ -3,7 +3,7 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { state, effect, el, mount, list, untracked } from "../qrp/index.js";
+import { state, effect, el, mount, list, untracked, clear } from "../qrp/index.js";
 
 // --- untracked --------------------------------------------------------------
 
@@ -399,4 +399,14 @@ test("rebind terminates on cyclic objects (depth bound, no stack overflow)", () 
 	b.self = b;
 	assert.doesNotThrow(() => { store.rows = [b]; });
 	assert.equal(view.querySelector("li").textContent, "B");
+});
+
+test("list does not crash after its container is cleared", () => {
+	const s = state({ items: [{ id: 1 }] });
+	const host = el("div", {}, list(() => s.items, (i) => i.id, () => el("i")));
+
+	clear(host);
+
+	assert.doesNotThrow(() => { s.items = [{ id: 2 }]; });
+	assert.equal(host.childNodes.length, 0);
 });

@@ -822,7 +822,9 @@ const setupWhen = (parent, marker) => {
 
 		const render = truthy ? marker.thenFn : marker.elseFn;
 
-		if(!render) {
+		// Container was clear()ed: the anchor is detached, so there is nowhere to
+		// insert — drop the old branch (above) and render nothing.
+		if(!render || !anchor.parentNode) {
 			return;
 		}
 
@@ -1032,6 +1034,12 @@ const setupList = (parent, marker) => {
 		void source.length;
 
 		const items = raw(source);
+
+		// Container was clear()ed: the anchor is detached, so there is nowhere to
+		// insert rows. Bail (the source is still tracked above).
+		if(!anchor.parentNode) {
+			return;
+		}
 
 		const next = new Map();
 		const desired = [];
