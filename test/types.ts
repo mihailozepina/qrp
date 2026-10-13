@@ -3,7 +3,7 @@
 
 import { state, effect, derive, el, list, when, mount, router, navigate, onEffectError, currentRoute, batch } from "../qrp/index.js";
 import { html, ref } from "../html/index.js";
-import { table, tablePager } from "../table/index.js";
+import { table, tablePager, tableSummary } from "../table/index.js";
 import { collection } from "../collection/index.js";
 import { dataGrid } from "../datagrid/index.js";
 import { form, registerInput, inputs, field, parseKV } from "../forms/index.js";
@@ -260,4 +260,24 @@ import { nice } from "../scale/index.js";
 	// @ts-expect-error — not a curve type
 	spark([1, 2], { curve: "bezier" });
 	void ticksOut; void stacked; void grouped; void nearest;
+}
+
+// --- table over a dataGrid view (no rows), pager/summary on a grid; object toast payloads ---
+{
+	interface Row { id: number; name: string; }
+	const grid = dataGrid<Row>(() => [], { key: (r) => r.id });
+	const viewTable = table<Row>({ view: grid, fields: [{ key: "name" }] });
+	tablePager(grid);
+	tableSummary(grid, { label: (from, to, total) => `${from}-${to}/${total}` });
+	tablePager(viewTable.view);
+	tableSummary(viewTable.view);
+	// @ts-expect-error rows (or view) is required
+	table<Row>({ fields: [{ key: "name" }] });
+	// @ts-expect-error the pager needs page/pageCount
+	tablePager({ total: () => 0 });
+
+	notify.error({ message: "Save failed", title: "Network" });
+	notify.success({ content: "Saved", duration: 0 });
+	notify.info({ body: "FYI", id: "fyi", description: "more" });
+	notify.warning("plain");
 }

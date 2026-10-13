@@ -31,6 +31,17 @@ export interface ToastMeta {
 
 export type ToastId = number | string;
 
+/**
+ * An object payload for a bus toast event / notify: the content is taken from
+ * `content`, else `message`, else `body`; every other field (title, id,
+ * duration, description, …) becomes the toast's meta.
+ */
+export interface ToastPayload extends ToastMeta {
+	content?: Renderable;
+	message?: Renderable;
+	body?: Renderable;
+}
+
 /** A toast in `store.items`. Reactive: `update()` changes show up in renderers. */
 export interface ToastItem {
 	id: ToastId;
@@ -79,10 +90,11 @@ export function createToasts(options?: ToastsOptions): ToastsController;
 /** The default toast controller wired to the global bus. */
 export const toasts: ToastsController;
 
-/** Fire-and-forget notifications through the global bus. Content is renderable. */
+/** Fire-and-forget notifications through the global bus. Content is a
+ *  renderable, or a `{ message | content | body, title, … }` payload. */
 export const notify: {
-	success(content: Renderable): void;
-	error(content: Renderable): void;
-	info(content: Renderable): void;
-	warning(content: Renderable): void;
+	success(content: Renderable | ToastPayload): void;
+	error(content: Renderable | ToastPayload): void;
+	info(content: Renderable | ToastPayload): void;
+	warning(content: Renderable | ToastPayload): void;
 };
