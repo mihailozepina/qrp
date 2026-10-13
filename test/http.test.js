@@ -467,14 +467,24 @@ test("relative paths that merely start with \"http\" still get baseUrl", () => {
 		});
 });
 
-test("absolute URLs of any scheme and protocol-relative URLs are not prefixed", () => {
+test("absolute URLs of any scheme are not prefixed", () => {
 	stubFetch(true, {});
 
 	const http = createHttp({ baseUrl: "/api", bus: emitter() });
-	const urls = ["HTTP://elsewhere.test/x", "ws://elsewhere.test/x", "//cdn.test/x"];
+	const urls = ["HTTP://elsewhere.test/x", "ws://elsewhere.test/x"];
 
 	return urls.reduce((p, url) => p.then(() => http.get(url)), Promise.resolve()).then(() => {
 		assert.deepEqual(globalThis.fetch.calls.map((c) => c.url), urls);
+	});
+});
+
+test("a protocol-relative path stays under baseUrl (the token never leaves the origin)", () => {
+	stubFetch(true, {});
+
+	const http = createHttp({ baseUrl: "/api", token: () => "secret", bus: emitter() });
+
+	return http.get("//evil.test/x").then(() => {
+		assert.ok(globalThis.fetch.calls[0].url.startsWith("/api/"));
 	});
 });
 

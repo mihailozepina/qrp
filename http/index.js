@@ -39,10 +39,11 @@ import { bus } from "../events/index.js";
 const GENERIC_ERROR = "Error contacting server...";
 const JSON_CONTENT_TYPE = "application/json";
 
-// A URL with its own scheme ("https://", "ws://", …) or a protocol-relative
-// "//host/…" is used as-is. A bare `startsWith("http")` also matched relative
-// paths like "httpbin/status" and silently dropped baseUrl.
-const ABSOLUTE_URL = /^([a-z][a-z\d+.-]*:)?\/\//i;
+// A URL with its own scheme ("https://", "ws://", …) is used as-is. A bare
+// `startsWith("http")` also matched relative paths like "httpbin/status" and
+// silently dropped baseUrl. Protocol-relative "//host/…" is deliberately NOT
+// absolute: a stray double slash must not send the auth token cross-origin.
+const ABSOLUTE_URL = /^[a-z][a-z\d+.-]*:\/\//i;
 
 // fetch rejects with an AbortError when the caller cancelled via `signal` —
 // a deliberate outcome, not a server problem worth a toast.
@@ -56,8 +57,8 @@ const isAbort = (error) => error != null && error.name === "AbortError";
  * @param {object} [options]
  * @param {string} [options.baseUrl] prefix for relative URLs, joined to the path
  *   with exactly one "/" (a leading slash on the path is optional); absolute
- *   URLs ("https://…", any "scheme://…") and protocol-relative "//host/…" are
- *   left untouched
+ *   URLs ("https://…", any "scheme://…") are left untouched; a protocol-relative
+ *   "//host/…" is treated as a path, so the token never leaves the origin
  * @param {function} [options.token] () => string|null bearer token getter
  * @param {function} [options.client] () => string|null value for the
  *   x-authorization-client header

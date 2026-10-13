@@ -26,6 +26,10 @@ import { state } from "../qrp/index.js";
 const comparable = (value) => (value instanceof Date ? value.getTime() : value);
 const isMissing = (value) => value === null || value === undefined || Number.isNaN(value);
 
+// One shared collator: localeCompare with options builds one per call, which
+// dominates sorting a large table.
+const naturalOrder = new Intl.Collator(undefined, { numeric: true });
+
 /**
  * The default sort comparator (also used by table()). A consistent total
  * order, unlike `a > b ? 1 : -1`, which breaks Array#sort on null/undefined
@@ -55,7 +59,7 @@ export const compareValues = (a, b, dir = 1) => {
 
 	const order = typeof av === "number" && typeof bv === "number"
 		? av - bv
-		: String(av).localeCompare(String(bv), undefined, { numeric: true });
+		: naturalOrder.compare(String(av), String(bv));
 
 	return order * (dir || 1);
 };

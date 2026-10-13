@@ -47,6 +47,20 @@ test("toCSV formula guard leaves numbers and numeric strings alone", () => {
 	assert.equal(toCSV(rows), "n,s,f,d\r\n-5,-5,+1.5e3,-0.25");
 });
 
+test("toCSV formula guard leaves formatted numbers and a lone dash alone", () => {
+	const values = ["-", "-1,234.50", "-10%", "-$5", "+381 64 123", "-5\u00a0€"];
+	const csv = toCSV(values.map((v) => ({ v })), ["v"]);
+
+	assert.deepEqual(csv.split("\r\n").slice(1), ["-", "\"-1,234.50\"", "-10%", "-$5", "+381 64 123", "-5\u00a0€"]);
+});
+
+test("toCSV formula guard still catches formulas that start like numbers", () => {
+	const values = ["-2+3", "-A1", "-1)", "+1|calc"];
+	const csv = toCSV(values.map((v) => ({ v })), ["v"]);
+
+	assert.deepEqual(csv.split("\r\n").slice(1), ["'-2+3", "'-A1", "'-1)", "'+1|calc"]);
+});
+
 test("toCSV guards header labels too", () => {
 	assert.equal(toCSV([], [{ key: "a", label: "=1+1" }]), "'=1+1");
 });

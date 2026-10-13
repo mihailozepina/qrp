@@ -93,12 +93,14 @@ test("memoize with max + ttl keeps the expiry map bounded by the LRU", () => {
 	const NativeMap = globalThis.Map;
 	const maps = [];
 
-	globalThis.Map = class extends NativeMap {
-		constructor(...args) {
-			super(...args);
-			maps.push(this);
+	globalThis.Map = new Proxy(NativeMap, {
+		construct: (target, args) => {
+			const map = new target(...args);
+			maps.push(map);
+
+			return map;
 		}
-	};
+	});
 
 	let fn;
 

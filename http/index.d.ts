@@ -17,8 +17,9 @@ export interface HttpOptions {
 	/**
 	 * Prefix for relative URLs, joined to the path with exactly one `/` — a
 	 * leading slash on the path is optional (`"/api/v1"` + `"dimensions"` →
-	 * `/api/v1/dimensions`). Absolute URLs (`https://…`, any `scheme://…`) and
-	 * protocol-relative `//host/…` are left untouched.
+	 * `/api/v1/dimensions`). Absolute URLs (`https://…`, any `scheme://…`) are
+	 * left untouched; a protocol-relative `//host/…` is treated as a path, so
+	 * the bearer token never leaves the origin.
 	 */
 	baseUrl?: string;
 	/** () => bearer token, attached as Authorization. */

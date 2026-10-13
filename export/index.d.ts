@@ -11,8 +11,9 @@ export type ExportColumn =
 export interface ToCSVOptions {
 	/**
 	 * Prefix string cells (and header labels) starting with = + - @ or tab/CR with
-	 * `'` so spreadsheets don't run them as formulas (CSV injection). Numbers and
-	 * numeric strings ("-5") are never changed. Default `true`.
+	 * `'` so spreadsheets don't run them as formulas (CSV injection). Numbers,
+	 * numeric strings — plain or formatted (`"-5"`, `"-1,234.50"`, `"-10%"`,
+	 * `"-$5"`) — and a lone `"-"` are never changed. Default `true`.
 	 */
 	formulaGuard?: boolean;
 }

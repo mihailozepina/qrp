@@ -6,13 +6,17 @@
 
 // CSV/formula injection (OWASP): a spreadsheet runs a cell that starts with
 // = + - @ (or tab/CR) as a formula. Prefixing a single quote makes it text.
-// Only STRING cells are guarded, and never a plain numeric string ("-5",
-// "+1.5e3") — those can't carry a formula, and numbers must stay numbers.
+// Only STRING cells are guarded, and never a numeric-looking one: a plain or
+// formatted number ("-5", "+1.5e3", "-1,234.50", "-10%", "-$5", "+381 64 123")
+// or a lone "-" placeholder. With no letters, parens or operators past the
+// sign, those can't call a function, and format's output must stay numbers.
 const FORMULA_START = /^[=+\-@\t\r]/;
-const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+const NUMERIC = /^[+-]?\p{Sc}?[\d.,' \u00a0\u202f]*\d[\d.,' \u00a0\u202f]*([eE][+-]?\d+)?[ \u00a0\u202f]?[%\p{Sc}]?$/u;
+
+const isSafe = (value) => value === "-" || NUMERIC.test(value);
 
 const guardFormula = (value) =>
-	typeof value === "string" && FORMULA_START.test(value) && !NUMERIC.test(value) ? `'${value}` : value;
+	typeof value === "string" && FORMULA_START.test(value) && !isSafe(value) ? `'${value}` : value;
 
 const escapeCell = (value, guard) => {
 	const raw = guard ? guardFormula(value) : value;
@@ -40,7 +44,8 @@ const normalizeColumn = (column) => {
  *
  * By default string cells (and header labels) that start with = + - @ or a
  * tab/CR are prefixed with `'` so Excel/Sheets treat them as text, not formulas
- * (CSV injection). Numbers and numeric strings like "-5" are left as-is. Pass
+ * (CSV injection). Numbers, numeric strings — including formatted ones like
+ * "-1,234.50", "-10%", "-$5" — and a lone "-" are left as-is. Pass
  * `{ formulaGuard: false }` for the raw values (e.g. a CSV for another program).
  *
  * @param {object[]} rows

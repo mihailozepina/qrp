@@ -55,7 +55,7 @@ export const persisted = (storageKey, defaults = {}) => {
 		// unsaved, instead of breaking the effect and whatever mounted it.
 		try {
 			localStorage.setItem(storageKey, json);
-		} catch (error) {
+		} catch(error) {
 			if(!warned) {
 				warned = true;
 				console.warn(`qrp persisted("${storageKey}"): could not save to localStorage`, error);
@@ -264,12 +264,14 @@ export const poll = (fn, ms, options = {}) => {
 
 	const resume = () => { if(timer == null) { timer = setInterval(fn, ms); } };
 	const pause = () => { if(timer != null) { clearInterval(timer); timer = null; } };
-	const start = () => { stopped = false; resume(); };
+	const mayRun = () => whenHidden || document.visibilityState === "visible";
+	// A start() while the tab is hidden arms the poll; visibilitychange runs it.
+	const start = () => { stopped = false; if(mayRun()) { resume(); } };
 	const stop = () => { stopped = true; pause(); };
 
 	if(immediate) { fn(); }
 
-	resume();
+	start();
 
 	if(!whenHidden) {
 		listen(document, "visibilitychange", () => {
@@ -279,8 +281,6 @@ export const poll = (fn, ms, options = {}) => {
 
 			if(document.visibilityState === "visible") { resume(); } else { pause(); }
 		});
-
-		if(document.visibilityState !== "visible") { pause(); }
 	}
 
 	onDispose(stop);

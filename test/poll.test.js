@@ -79,3 +79,27 @@ test("start() after stop() resumes, and hidden/visible still pause and resume", 
 		dispose();
 	}
 });
+
+test("start() while the tab is hidden waits for it to become visible", async () => {
+	let n = 0;
+	let handle;
+	const { dispose } = scoped(() => {
+		handle = poll(() => { n += 1; }, 10);
+	});
+
+	try {
+		handle.stop();
+		setVisibility("hidden");
+		handle.start();
+
+		await new Promise((r) => setTimeout(r, 35));
+		assert.equal(n, 0, "no background polling after start() while hidden");
+
+		setVisibility("visible");
+		await new Promise((r) => setTimeout(r, 35));
+		assert.ok(n >= 1, "runs once visible");
+	} finally {
+		delete document.visibilityState;
+		dispose();
+	}
+});

@@ -361,6 +361,11 @@ const pageWindow = (current, count, window) => {
 	return out;
 };
 
+// The page the view actually shows. A collection clamps page.index into range
+// (a filter can shrink the set under it); a hand-rolled view may not have
+// pageIndex(), so fall back to the raw index.
+const currentPage = (view) => (view.pageIndex ? view.pageIndex() : view.page.index);
+
 /**
  * A stock pagination control for a table()'s `.view` (or any collection):
  * prev / windowed page numbers / next, clamped, reactive. Renders nothing when
@@ -372,11 +377,6 @@ const pageWindow = (current, count, window) => {
  * @param {object} [options.classes] extra classes: { nav, button, active, gap }
  * @returns {HTMLElement}
  */
-// The page the view actually shows. A collection clamps page.index into range
-// (a filter can shrink the set under it); a hand-rolled view may not have
-// pageIndex(), so fall back to the raw index.
-const currentPage = (view) => (view.pageIndex ? view.pageIndex() : view.page.index);
-
 export const tablePager = (view, options = {}) => {
 	const window = options.window === undefined ? 1 : options.window;
 	const classes = options.classes || {};
