@@ -666,11 +666,27 @@ const createEl = (tag) => (
 	SVG_TAGS.has(tag) ? document.createElementNS(SVG_NS, tag) : document.createElement(tag)
 );
 
+// String props with no backing attribute: clearing means emptying them.
+const CONTENT_PROPS = new Set(["value", "textContent", "innerText", "innerHTML"]);
+
+// Props whose attribute name isn't the lowercased property name.
+const PROP_ATTRS = { htmlFor: "for", httpEquiv: "http-equiv", acceptCharset: "accept-charset" };
+
+// Enumerated string props where `false` is a real value ("false"), not "unset":
+// aria-* booleans and contentEditable (assigning "" to it throws).
+const keepsFalse = (key) => key === "contentEditable" || /^aria[A-Z]/.test(key);
+
 // A DOM property set to null/undefined/false: assigning it would stringify
-// ("null", "false") on string props, so boolean props get false, string props
-// are emptied (value/textContent become ""), and the backing attribute goes.
-const clearProp = (node, key) => {
+// ("null", "false") on string props, so boolean props get false, content props
+// are emptied (value/textContent become ""), and reflected props lose their
+// backing attribute.
+const clearProp = (node, key, value) => {
 	const current = node[key];
+
+	if(value === false && keepsFalse(key)) {
+		node[key] = "false";
+		return;
+	}
 
 	if(typeof current === "boolean") {
 		node[key] = false;
@@ -678,16 +694,17 @@ const clearProp = (node, key) => {
 	}
 
 	if(current === null) {
-		// on* handler props (onclick = null) and other nullable props.
+		// on* handler props (onclick = null), aria* reflection, other nullables.
 		node[key] = null;
 		return;
 	}
 
-	if(typeof current === "string") {
+	if(CONTENT_PROPS.has(key)) {
 		node[key] = "";
+		return;
 	}
 
-	node.removeAttribute(key);
+	node.removeAttribute(PROP_ATTRS[key] || key);
 };
 
 const setAttr = (node, key, value) => {
@@ -723,7 +740,7 @@ const setAttr = (node, key, value) => {
 
 	if(!isSvg && key in node) {
 		if(isEmpty) {
-			clearProp(node, key);
+			clearProp(node, key, value);
 		} else {
 			node[key] = value;
 		}
@@ -1118,7 +1135,7 @@ const removeRow = (entry) => {
 const setupList = (parent, marker) => {
 	const anchor = document.createComment("qrp-list");
 	parent.appendChild(anchor);
-	marker._ends.add(anchor);
+	marker._anchors.add(anchor);
 
 	// key -> { first, last, scope }; scope owns the row's effects for disposal.
 	let cache = new Map();
@@ -1130,6 +1147,7 @@ const setupList = (parent, marker) => {
 		cache.forEach(removeRow);
 
 		anchor.remove();
+		marker._anchors.delete(anchor);
 	});
 
 	// Several nodes: gather them behind a start comment into one fragment so the
@@ -1325,15 +1343,25 @@ export const list = (source, keyFn, render, options = {}) => {
 	const elemToItem = new WeakMap();
 
 	// Multi-node rows map only their start comment, and a node inside one (even
-	// one a nested when() swapped in later) isn't a descendant of it: find the
-	// nearest row start among the node's preceding siblings, stopping at this
-	// list's end anchor so content after the list never matches its last row.
+	// one a nested when() swapped in later) isn't a descendant of it: climb to
+	// the ancestor that sits beside this list's anchor (row level), then find the
+	// nearest row start among its preceding siblings, stopping at the anchor so
+	// content after the list never matches its last row. Only the row level is
+	// scanned, so a miss (a click outside the list) stays cheap.
+	const atRowLevel = (node) => Array.from(marker._anchors).some((anchor) => (
+		anchor.parentNode && anchor.parentNode === node.parentNode
+	));
+
 	const rangedItemFor = (start) => {
-		for(let node = start; node; node = node.parentElement) {
-			for(let sibling = node; sibling && !marker._ends.has(sibling); sibling = sibling.previousSibling) {
-				if(elemToItem.has(sibling)) {
-					return elemToItem.get(sibling);
-				}
+		let node = start;
+
+		while(node && !atRowLevel(node)) {
+			node = node.parentNode;
+		}
+
+		for(let sibling = node; sibling && !marker._anchors.has(sibling); sibling = sibling.previousSibling) {
+			if(elemToItem.has(sibling)) {
+				return elemToItem.get(sibling);
 			}
 		}
 
@@ -1346,7 +1374,8 @@ export const list = (source, keyFn, render, options = {}) => {
 		render,
 		onDuplicateKey: options.onDuplicateKey || "error",
 		_elemToItem: elemToItem,
-		_ends: new WeakSet(),
+		// Live anchors of this marker (added on render, removed on dispose).
+		_anchors: new Set(),
 		_ranged: false,
 		toString: markerHint("list"),
 
@@ -1813,6 +1842,8 @@ export const router = (routes, outlet, options = {}) => {
 			(options.linksRoot || document).removeEventListener("click", onClick);
 			window.removeEventListener("popstate", render);
 			window.removeEventListener("qrp:navigate", render);
+			// A swap still waiting on a View Transition must not mount afterwards.
+			navToken += 1;
 
 			if(current) {
 				current.dispose();

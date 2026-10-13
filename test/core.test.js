@@ -507,3 +507,39 @@ test("el(): style object sets CSS custom properties", () => {
 
 	assert.equal(div.style.getPropertyValue("--w"), "20px");
 });
+
+test("el(): false keeps its meaning on aria* and contentEditable", () => {
+	// happy-dom lacks ARIA reflection; browsers reflect ariaExpanded ↔ aria-expanded.
+	const proto = HTMLElement.prototype;
+	const had = Object.getOwnPropertyDescriptor(proto, "ariaExpanded");
+	Object.defineProperty(proto, "ariaExpanded", {
+		configurable: true,
+		get() { return this.getAttribute("aria-expanded"); },
+		set(v) {
+			if(v === null) { this.removeAttribute("aria-expanded"); } else { this.setAttribute("aria-expanded", String(v)); }
+		}
+	});
+
+	try {
+		const s = state({ open: true });
+		const div = el("div", { ariaExpanded: () => s.open, contentEditable: () => s.open });
+
+		s.open = false;
+
+		assert.equal(div.getAttribute("aria-expanded"), "false");
+		assert.equal(div.contentEditable, "false");
+	} finally {
+		if(had) { Object.defineProperty(proto, "ariaExpanded", had); } else { delete proto.ariaExpanded; }
+	}
+});
+
+test("el(): clearing htmlFor removes the for attribute", () => {
+	const s = state({ target: "name" });
+	const label = el("label", { htmlFor: () => s.target });
+
+	assert.equal(label.getAttribute("for"), "name");
+
+	s.target = null;
+
+	assert.equal(label.hasAttribute("for"), false);
+});

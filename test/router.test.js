@@ -258,3 +258,25 @@ test("fast A → B → A with async View Transitions leaves page A on screen", a
 		delete document.startViewTransition;
 	}
 });
+
+test("dispose() during a pending View Transition mounts nothing afterwards", async () => {
+	history.replaceState(null, "", "/a");
+	document.startViewTransition = (callback) => { queueMicrotask(callback); };
+
+	try {
+		const outlet = document.createElement("div");
+		const app = router({
+			"/a": (view) => view.appendChild(el("h1", {}, "A")),
+			"/b": (view) => view.appendChild(el("h1", {}, "B"))
+		}, outlet);
+
+		await Promise.resolve();
+		navigate("/b");
+		app.dispose();
+		await new Promise(resolve => setTimeout(resolve, 0));
+
+		assert.notEqual(outlet.textContent, "B");
+	} finally {
+		delete document.startViewTransition;
+	}
+});

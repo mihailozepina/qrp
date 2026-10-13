@@ -583,6 +583,11 @@ test("itemFor resolves nodes inside multi-node rows, even after a branch flip", 
 
 	const after = [...ul.querySelectorAll("li")].find((li) => li.textContent === "after");
 	assert.equal(l.itemFor(after), undefined, "a node after the list isn't a row");
+
+	const outside = el("p", {}, el("span", {}, "x"));
+	el("div", {}, outside, ul);
+	assert.equal(l.itemFor(outside.firstChild), undefined, "a node outside the list's container isn't a row");
+	assert.equal(l.itemFor(ul), undefined, "the container itself isn't a row");
 });
 
 test("single-element rows add no extra nodes (fast path)", () => {
