@@ -15,6 +15,10 @@
  * parent, or pass `stroke`/`fill`. A single-point (or perfectly flat) series
  * renders centered, not pinned to the corner.
  *
+ * **Gaps:** a `null`/`undefined`/`NaN` value is a gap — the line/area breaks
+ * there (a new subpath), a bar is skipped, and `project()` omits that point
+ * (the rest keep their `index`). Gaps don't count toward the y extent.
+ *
  * **`axis: true`** draws only a **baseline rule** (a `<line>` in `currentColor` at
  * low opacity) — no tick labels; this is a primitive, not an axis component. For
  * labelled ticks, add your own `<text>` (see `scale.ticks`) or a caption next to
@@ -97,6 +101,7 @@ export function spark(source: (() => readonly any[]) | readonly any[], opts?: Sp
 /**
  * Where each datum lands on screen under the same options a `spark()` uses — the
  * points its marks are drawn from. Hit-test a pointer against them for a
- * tooltip or cursor. Reads the source once, now.
+ * tooltip or cursor. Reads the source once, now. Gap points (null/NaN values)
+ * are left out; each point's `index` still refers to the source array.
  */
 export function project<T = any>(source: (() => readonly T[]) | readonly T[], opts?: SparkOptions): SparkPoint<T>[];
