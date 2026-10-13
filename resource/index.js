@@ -70,26 +70,45 @@ const isEmpty = (data) => data == null || (Array.isArray(data) && data.length ==
  *     data:    (rows) => list(() => rows, r => r.id, row),
  *   });
  *
+ * The data and error branches are keyed on the value's identity: a reload that
+ * brings back a new `data` (or a new `error`) rebuilds that branch with it, so
+ * the fixed `rows` argument above is always the current data. While a reload is
+ * in flight the previous data stays up (no loading flash); mutating `data` in
+ * place updates through the branch's own reactive reads, without a rebuild.
+ *
  * @param {object} res a resource() (or anything with reactive data/loading/error)
  * @param {object} [views] { loading?, error?(err), empty?, data?(data) }
  * @returns a `when()` marker (pass as an el child)
  */
 export const asyncView = (res, views = {}) => {
-	const phase = () => {
-		if(res.error) { return "error"; }
-		if(res.loading && res.data == null) { return "loading"; }
-		if(isEmpty(res.data)) { return "empty"; }
+	// `when` is value-keyed, so the key carries the phase AND (for data/error)
+	// the value's identity. The key object is reused while both are unchanged,
+	// so unrelated re-runs (e.g. `loading` flipping) don't rebuild the branch.
+	let last = null;
 
-		return "data";
+	const keyOf = (phase, value) => {
+		if(!last || last.phase !== phase || !Object.is(last.value, value)) {
+			last = { phase, value };
+		}
+
+		return last;
+	};
+
+	const current = () => {
+		if(res.error) { return keyOf("error", res.error); }
+		if(res.loading && res.data == null) { return keyOf("loading"); }
+		if(isEmpty(res.data)) { return keyOf("empty"); }
+
+		return keyOf("data", res.data);
 	};
 
 	const nothing = () => null;
 
-	return when(phase, (p) => {
-		if(p === "error") { return (views.error || nothing)(res.error); }
-		if(p === "loading") { return (views.loading || nothing)(); }
-		if(p === "empty") { return (views.empty || nothing)(); }
+	return when(current, ({ phase, value }) => {
+		if(phase === "error") { return (views.error || nothing)(value); }
+		if(phase === "loading") { return (views.loading || nothing)(); }
+		if(phase === "empty") { return (views.empty || nothing)(); }
 
-		return (views.data || nothing)(res.data);
+		return (views.data || nothing)(value);
 	});
 };
