@@ -244,7 +244,7 @@ test("a synchronous build error does not leave the loader stuck", () => {
 	stubFetch(true, {});
 	const http = createHttp({ baseUrl: "/api", bus: emitter() });
 
-	// null path → path.indexOf throws inside buildUrl, before fetch
+	// null path → buildUrl throws a TypeError, before fetch
 	return http.get(null).then(
 		() => assert.fail("should reject"),
 		() => { assert.equal(http.loading.pending, 0); } // not stuck at 1
@@ -397,4 +397,104 @@ test("baseUrl joining leaves absolute URLs, empty baseUrl and query-only paths a
 
 test("params still append after the joined path", async () => {
 	assert.equal(await urlFor("/api", "things", { params: { page: 2 } }), "/api/things?page=2");
+});
+
+test("a cancelled request (AbortError) rejects without emitting error", () => {
+	const b = emitter();
+	const errors = [];
+	b.on("error", (e) => errors.push(e));
+
+	const abortError = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+	const http = createHttp({ bus: b, fetch: () => Promise.reject(abortError) });
+
+	return http.get("/x").then(
+		() => assert.fail("should reject"),
+		(error) => {
+			assert.equal(error, abortError);
+			assert.deepEqual(errors, []);
+			assert.equal(http.loading.pending, 0);
+		}
+	);
+});
+
+test("a real AbortController abort rejects without emitting error", () => {
+	const b = emitter();
+	const errors = [];
+	b.on("error", (e) => errors.push(e));
+
+	// Transport that honours the signal like fetch does.
+	const fetchLike = (url, init) => new Promise((resolve, reject) => {
+		init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+	});
+	const http = createHttp({ bus: b, fetch: fetchLike });
+	const controller = new AbortController();
+	const pending = http.get("/x", { signal: controller.signal });
+
+	controller.abort();
+
+	return pending.then(
+		() => assert.fail("should reject"),
+		(error) => {
+			assert.equal(error.name, "AbortError");
+			assert.deepEqual(errors, []);
+		}
+	);
+});
+
+test("a network failure still emits error", () => {
+	const b = emitter();
+	const errors = [];
+	b.on("error", (e) => errors.push(e));
+
+	const http = createHttp({ bus: b, fetch: () => Promise.reject(new TypeError("Failed to fetch")) });
+
+	return http.get("/x").then(
+		() => assert.fail("should reject"),
+		() => { assert.equal(errors.length, 1); }
+	);
+});
+
+test("relative paths that merely start with \"http\" still get baseUrl", () => {
+	stubFetch(true, {});
+
+	const http = createHttp({ baseUrl: "/api", bus: emitter() });
+
+	return http.get("httpbin/status")
+		.then(() => http.get("https-certs"))
+		.then(() => {
+			assert.equal(globalThis.fetch.calls[0].url, "/api/httpbin/status");
+			assert.equal(globalThis.fetch.calls[1].url, "/api/https-certs");
+		});
+});
+
+test("absolute URLs of any scheme and protocol-relative URLs are not prefixed", () => {
+	stubFetch(true, {});
+
+	const http = createHttp({ baseUrl: "/api", bus: emitter() });
+	const urls = ["HTTP://elsewhere.test/x", "ws://elsewhere.test/x", "//cdn.test/x"];
+
+	return urls.reduce((p, url) => p.then(() => http.get(url)), Promise.resolve()).then(() => {
+		assert.deepEqual(globalThis.fetch.calls.map((c) => c.url), urls);
+	});
+});
+
+test("a custom fetch that throws synchronously rejects and releases the loader", () => {
+	const b = emitter();
+	const errors = [];
+	const stops = [];
+	b.on("error", (e) => errors.push(e));
+	b.on("loader.stop", () => stops.push(true));
+
+	const boom = new Error("transport exploded");
+	const http = createHttp({ bus: b, fetch: () => { throw boom; } });
+
+	return http.get("/x").then(
+		() => assert.fail("should reject"),
+		(error) => {
+			assert.equal(error, boom);
+			assert.equal(http.loading.pending, 0);
+			assert.equal(stops.length, 1);
+			assert.equal(errors.length, 1);
+		}
+	);
 });
