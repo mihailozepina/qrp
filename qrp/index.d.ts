@@ -183,6 +183,10 @@ export function onDispose(fn: () => void): void;
  * during it. `mount()` wraps this and also clears the DOM — reach for `scope()`
  * directly only when you're managing effects **without** a DOM subtree to clear
  * (e.g. a bundle of subscriptions you want to tear down together).
+ * Called inside a running effect, the scope still owns what its fn creates, and
+ * the effect owns the scope — it's disposed when that effect re-runs or is
+ * disposed. (Reads in fn are still tracked by the effect; wrap the call in
+ * `untracked()` if they shouldn't be.)
  */
 export function scope(fn: () => void): Scope;
 

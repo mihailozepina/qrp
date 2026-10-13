@@ -314,8 +314,8 @@ const cleanupEffect = (runner) => {
 	runner.deps.forEach(dep => dep.delete(runner));
 	runner.deps.length = 0;
 
-	// Effects created during this runner's last run die with it.
-	runner.children.forEach(child => disposeEffect(child));
+	// Effects (and scopes) created during this runner's last run die with it.
+	runner.children.forEach(child => child.dispose());
 	runner.children.length = 0;
 };
 
@@ -332,10 +332,10 @@ const disposeEffect = (runner) => {
  * so those sub-scopes are torn down on unmount, not just on their own churn.
  */
 export const onDispose = (fn) => {
-	if(activeEffect) {
-		activeEffect.disposers.push(fn);
-	} else if(currentScope) {
+	if(scopeOwns()) {
 		currentScope.disposers.push(fn);
+	} else if(activeEffect) {
+		activeEffect.disposers.push(fn);
 	}
 };
 
@@ -462,10 +462,10 @@ export const effect = (fn, options = {}) => {
 	runner.id = effectSeq;
 	runner.dispose = () => disposeEffect(runner);
 
-	if(activeEffect) {
-		activeEffect.children.push(runner);
-	} else if(currentScope) {
+	if(scopeOwns()) {
 		currentScope.effects.push(runner);
+	} else if(activeEffect) {
+		activeEffect.children.push(runner);
 	}
 
 	runner();
@@ -515,10 +515,20 @@ export const derive = (fn) => {
 
 let currentScope = null;
 
+// Does the current scope own what's created right now, rather than the running
+// effect? A scope records the effect-stack depth it was opened at, so it owns
+// everything created directly in its fn — even when that fn runs inside an
+// effect (scoped()/mount() from an effect body) — while effects that run
+// within it still own their own children. untracked() empties the stack, so
+// the innermost scope owns there too.
+const scopeOwns = () => currentScope !== null && effectStack.length <= currentScope.depth;
+
 /**
  * Run fn inside a fresh ownership scope. Every top-level effect created
  * during the run is collected; dispose() kills them all. mount() and the
- * router use this — you rarely call it directly.
+ * router use this — you rarely call it directly. Called inside a running
+ * effect, the scope still owns what fn creates, and the effect owns the scope
+ * (disposed when the effect re-runs or is disposed).
  */
 export const scope = (fn) => {
 	const previous = currentScope;
@@ -526,6 +536,7 @@ export const scope = (fn) => {
 	const self = {
 		effects: [],
 		disposers: [],
+		depth: effectStack.length,
 		dispose: () => {
 			self.effects.forEach(runner => disposeEffect(runner));
 			self.effects.length = 0;
@@ -533,6 +544,12 @@ export const scope = (fn) => {
 			self.disposers.length = 0;
 		}
 	};
+
+	// Opened inside a running effect: the effect owns the scope like a child
+	// effect — disposed when the effect re-runs or is disposed.
+	if(activeEffect && !scopeOwns()) {
+		activeEffect.children.push(self);
+	}
 
 	currentScope = self;
 
