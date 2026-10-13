@@ -43,11 +43,24 @@ export const persisted = (storageKey, defaults = {}) => {
 	};
 
 	const store = state({ ...defaults, ...load() });
+	let warned = false;
 
 	effect(() => {
 		// JSON.stringify reads every key through the Proxy, so this effect
 		// tracks the whole object — any write re-persists.
-		localStorage.setItem(storageKey, JSON.stringify(store));
+		const json = JSON.stringify(store);
+
+		// setItem throws when storage is full (QuotaExceededError) or blocked
+		// (some private modes, sandboxed iframes). Keep the state working, just
+		// unsaved, instead of breaking the effect and whatever mounted it.
+		try {
+			localStorage.setItem(storageKey, json);
+		} catch (error) {
+			if(!warned) {
+				warned = true;
+				console.warn(`qrp persisted("${storageKey}"): could not save to localStorage`, error);
+			}
+		}
 	});
 
 	listen(window, "storage", (event) => {
@@ -244,20 +257,30 @@ export const visible = () => {
 export const poll = (fn, ms, options = {}) => {
 	const { immediate = false, whenHidden = false } = options;
 	let timer = null;
+	// Set by the caller's stop(), cleared by their start(). Visibility only
+	// pauses/resumes a poll the caller hasn't stopped, so returning to the tab
+	// doesn't restart one they turned off.
+	let stopped = false;
 
-	const start = () => { if(timer == null) { timer = setInterval(fn, ms); } };
-	const stop = () => { if(timer != null) { clearInterval(timer); timer = null; } };
+	const resume = () => { if(timer == null) { timer = setInterval(fn, ms); } };
+	const pause = () => { if(timer != null) { clearInterval(timer); timer = null; } };
+	const start = () => { stopped = false; resume(); };
+	const stop = () => { stopped = true; pause(); };
 
 	if(immediate) { fn(); }
 
-	start();
+	resume();
 
 	if(!whenHidden) {
 		listen(document, "visibilitychange", () => {
-			if(document.visibilityState === "visible") { start(); } else { stop(); }
+			if(stopped) {
+				return;
+			}
+
+			if(document.visibilityState === "visible") { resume(); } else { pause(); }
 		});
 
-		if(document.visibilityState !== "visible") { stop(); }
+		if(document.visibilityState !== "visible") { pause(); }
 	}
 
 	onDispose(stop);
@@ -299,6 +322,16 @@ export const watch = (getter, callback, interval = 250) => {
  * script set it.
  */
 export const cookies = (interval = 250) => {
+	// A value that isn't valid percent-encoding (a bare "%") is kept as-is
+	// rather than failing the whole parse.
+	const decode = (value) => {
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return value;
+		}
+	};
+
 	const parse = () => Object.fromEntries(
 		document.cookie
 			.split(";")
@@ -307,7 +340,10 @@ export const cookies = (interval = 250) => {
 			.map(pair => {
 				const eq = pair.indexOf("=");
 
-				return [pair.slice(0, eq), decodeURIComponent(pair.slice(eq + 1))];
+				// A cookie with no "=" is a bare name with an empty value.
+				return eq === -1
+					? [pair, ""]
+					: [pair.slice(0, eq), decode(pair.slice(eq + 1))];
 			})
 	);
 

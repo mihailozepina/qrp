@@ -3,8 +3,8 @@ import "./setup.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { effect } from "../qrp/index.js";
-import { persisted, query, media, viewport, online } from "../browser/index.js";
+import { effect, scoped } from "../qrp/index.js";
+import { persisted, query, media, viewport, online, cookies } from "../browser/index.js";
 
 test("persisted loads defaults and writes through to localStorage", () => {
 	localStorage.clear();
@@ -25,6 +25,74 @@ test("persisted restores an existing value over the default", () => {
 	const store = persisted("prefs2", { theme: "dark" });
 
 	assert.equal(store.theme, "solarized");
+});
+
+test("persisted keeps working (unsaved) when localStorage.setItem throws", () => {
+	const realStorage = globalThis.localStorage;
+	const realWarn = console.warn;
+	const warnings = [];
+
+	globalThis.localStorage = {
+		getItem: () => null,
+		setItem: () => {
+			throw new Error("QuotaExceededError");
+		}
+	};
+	console.warn = (...args) => warnings.push(args);
+
+	try {
+		const store = persisted("full", { theme: "dark" });
+
+		assert.equal(store.theme, "dark");
+
+		const seen = [];
+		effect(() => seen.push(store.theme));
+
+		store.theme = "light";
+		store.theme = "blue";
+
+		assert.equal(store.theme, "blue");
+		assert.deepEqual(seen, ["dark", "light", "blue"]);
+		assert.equal(warnings.length, 1, "warns once, not on every write");
+	} finally {
+		globalThis.localStorage = realStorage;
+		console.warn = realWarn;
+	}
+});
+
+const withCookie = (value, fn) => {
+	Object.defineProperty(document, "cookie", { get: () => value, configurable: true });
+
+	try {
+		return fn();
+	} finally {
+		delete document.cookie;
+	}
+};
+
+test("cookies() falls back to the raw value when it isn't valid percent-encoding", () => {
+	withCookie("bad=100%; good=a%20b", () => {
+		const { dispose } = scoped(() => {
+			const jar = cookies();
+
+			assert.equal(jar.bad, "100%");
+			assert.equal(jar.good, "a b");
+		});
+
+		dispose();
+	});
+});
+
+test("cookies() treats a cookie without = as a name with an empty value", () => {
+	withCookie("flag; theme=dark", () => {
+		const { dispose } = scoped(() => {
+			const jar = cookies();
+
+			assert.deepEqual({ ...jar }, { flag: "", theme: "dark" });
+		});
+
+		dispose();
+	});
 });
 
 test("query reflects the URL and is reactive", () => {

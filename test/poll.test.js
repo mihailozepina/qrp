@@ -30,3 +30,52 @@ test("scope dispose clears the interval", async () => {
 	await new Promise((r) => setTimeout(r, 30));
 	assert.equal(n, after, "disposed → no ticks");
 });
+
+const setVisibility = (value) => {
+	Object.defineProperty(document, "visibilityState", { get: () => value, configurable: true });
+	document.dispatchEvent(new Event("visibilitychange"));
+};
+
+test("stop() survives the tab becoming visible again", async () => {
+	let n = 0;
+	const { dispose } = scoped(() => {
+		const { stop } = poll(() => { n += 1; }, 10);
+
+		stop();
+	});
+
+	try {
+		setVisibility("hidden");
+		setVisibility("visible");
+
+		await new Promise((r) => setTimeout(r, 35));
+		assert.equal(n, 0, "a user stop() is not undone by visibilitychange");
+	} finally {
+		delete document.visibilityState;
+		dispose();
+	}
+});
+
+test("start() after stop() resumes, and hidden/visible still pause and resume", async () => {
+	let n = 0;
+	let handle;
+	const { dispose } = scoped(() => {
+		handle = poll(() => { n += 1; }, 10);
+	});
+
+	try {
+		handle.stop();
+		handle.start();
+
+		setVisibility("hidden");
+		await new Promise((r) => setTimeout(r, 35));
+		assert.equal(n, 0, "paused while hidden");
+
+		setVisibility("visible");
+		await new Promise((r) => setTimeout(r, 35));
+		assert.ok(n >= 1, "resumed when visible");
+	} finally {
+		delete document.visibilityState;
+		dispose();
+	}
+});
