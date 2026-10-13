@@ -46,7 +46,7 @@ export interface ToastsOptions {
 	bus?: Emitter;
 	/** Auto-dismiss delay in ms (0 = sticky). */
 	timeout?: number;
-	/** Identical-message suppression window in ms. */
+	/** Identical-message suppression window in ms (only while the earlier toast is still showing). */
 	dedupeWindow?: number;
 	/** Keep a dismissed toast (marked `removed`) this long before deleting it (default 0). */
 	exitMs?: number;
